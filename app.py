@@ -1,13 +1,15 @@
-import flask
-from flask import Flask, request, session, render_template_string
-import requests
-import base64
 import os
 import time
 import random
+import base64
+import requests
+
+from flask import Flask, request, session, render_template_string
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)  # Secure random secret key
+app.secret_key = os.getenv('FLASK_SECRET_KEY')
+if not app.secret_key:
+    raise ValueError("FLASK_SECRET_KEY must be set in environment variables for secure sessions.")
 
 # Load environment variables
 openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
@@ -232,16 +234,10 @@ def generate_prompt(desc: str, mode: str = None) -> str:
         r.raise_for_status()
         return r.json()["choices"][0]["message"]["content"].strip()
     except requests.RequestException as e:
-        return f"Error: OpenRouter API failed: {str(e)}"
+        return f"Error: OpenRouter API failed - {str(e)}"
 
 def generate_image(prompt: str, refs, use_controlnet: bool, denoising: float, image_size: str, blur: bool = False):
     """Generate image using A1111 API, with optional blur and overlay."""
-    if not refs:
-        return "Warning: No reference images provided — using text-only mode."
-
-    ref_bytes = refs[0].read()
-    init_img = base64.b64encode(ref_bytes).decode()
-
     size_map = {
         "Banner Wide (1920×300)": (1920, 300),
         "Banner Narrow (728×90)": (728, 90),
@@ -250,7 +246,7 @@ def generate_image(prompt: str, refs, use_controlnet: bool, denoising: float, im
     }
     w, h = size_map.get(image_size, (768, 1024))
 
-    payload = {
+    base_payload = {
         "prompt": prompt,
         "negative_prompt": "blurry, deformed, ugly, low quality, extra limbs, bad hands",
         "steps": 35,
@@ -258,25 +254,37 @@ def generate_image(prompt: str, refs, use_controlnet: bool, denoising: float, im
         "sampler_name": "DPM++ 2M Karras",
         "width": w,
         "height": h,
-        "denoising_strength": denoising,
-        "init_images": [init_img]
     }
 
-    if use_controlnet:
-        payload["alwayson_scripts"] = {
-            "ControlNet": {"args": [{
-                "enable": True,
-                "module": "ip-adapter_face_id",
-                "model": "ip-adapter-faceid_sd15",
-                "weight": 0.85,
-                "image": init_img,
-                "control_mode": 0,
-                "resize_mode": 1
-            }]}
+    if refs:
+        ref_bytes = refs[0].read()
+        init_img = base64.b64encode(ref_bytes).decode()
+        endpoint = f"{a1111_url}/sdapi/v1/img2img"
+        payload = {
+            **base_payload,
+            "denoising_strength": denoising,
+            "init_images": [init_img]
         }
+        if use_controlnet:
+            payload["alwayson_scripts"] = {
+                "ControlNet": {"args": [{
+                    "enable": True,
+                    "module": "ip-adapter_face_id",
+                    "model": "ip-adapter-faceid_sd15",
+                    "weight": 0.85,
+                    "image": init_img,
+                    "control_mode": 0,
+                    "resize_mode": 1
+                }]}
+            }
+    else:
+        if use_controlnet:
+            return "Error: ControlNet requires a reference image."
+        endpoint = f"{a1111_url}/sdapi/v1/txt2img"
+        payload = base_payload
 
     try:
-        resp = requests.post(f"{a1111_url}/sdapi/v1/img2img", json=payload, timeout=400)
+        resp = requests.post(endpoint, json=payload, timeout=400)
         resp.raise_for_status()
         res = resp.json()
         if not res.get('images'):
@@ -285,26 +293,20 @@ def generate_image(prompt: str, refs, use_controlnet: bool, denoising: float, im
         for i, b64 in enumerate(res['images']):
             try:
                 img_src = f"data:image/png;base64,{b64}"
-                if blur:
-                    images_html += f'''
-                    <div class="polaroid blurred">
-                    <img src="{img_src}">
-                    <div class="overlay">FOR THE FULL EXPERIENCE MAKE AN ACCOUNT OR BUY SOME CREDITS</div>
-                    <div class="caption">Creation {i+1} (Preview)</div>
-                    </div>
-                    '''
-                else:
-                    images_html += f'''
-                    <div class="polaroid">
-                    <img src="{img_src}">
-                    <div class="caption">Creation {i+1}</div>
-                    </div>
-                    '''
+                polaroid_class = "polaroid blurred" if blur else "polaroid"
+                overlay = '<div class="overlay">FOR THE FULL EXPERIENCE MAKE AN ACCOUNT OR BUY SOME CREDITS</div>' if blur else ''
+                images_html += f'''
+                <div class="{polaroid_class}">
+                <img src="{img_src}">
+                {overlay}
+                <div class="caption">Creation {i+1}</div>
+                </div>
+                '''
             except ValueError:
                 images_html += f"<p>Error: Image {i+1} decoding failed.</p>"
         return images_html
     except requests.RequestException as e:
-        return f"Error: A1111 rendering failed: {str(e)} – ensure the endpoint is accessible."
+        return f"Error: A1111 rendering failed - {str(e)}. Ensure the endpoint is accessible."
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -376,7 +378,6 @@ def index():
         session['image_size'] = image_size
 
         if 'enhance' in request.form:
-            time.sleep(random.uniform(1.5, 2.1))
             enhanced = generate_prompt(desc, mode="enhance")
             if "Error" in enhanced:
                 error = f"<p style='color:red;'>{enhanced}</p>"
@@ -404,13 +405,11 @@ def index():
                 error = "<p style='color:red;'>OpenRouter API key required – add in Vercel env vars.</p>"
             else:
                 session['credits'] -= 1 if session['logged_in'] else 0  # Free previews for non-logged-in
-                time.sleep(random.uniform(1.5, 2.1))
                 prompt = generate_prompt(desc, mode=content_mode if session['logged_in'] else None)
                 if "Error" in prompt:
                     error = f"<p style='color:red;'>{prompt}</p>"
                 else:
                     generated_prompt = f"<h2>Generated Prompt</h2><pre>{prompt}</pre>"
-                    time.sleep(random.uniform(2.4, 3.3))
                     blur = not session['logged_in'] and is_nsfw(desc)
                     images_html = generate_image(prompt, refs, use_controlnet, denoising, image_size, blur=blur)
                     if "Error" in images_html or "Warning" in images_html:
