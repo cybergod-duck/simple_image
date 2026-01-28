@@ -105,7 +105,7 @@ textarea {
 }
 """
 
-# Login/Signup HTML template
+# Login/Signup HTML template (use Jinja2 placeholders, NOT .format())
 LOGIN_HTML = f"""
 <html>
 <head>
@@ -350,7 +350,7 @@ def index():
                 return redirect('/')
 
     if not session['logged_in']:
-        return render_template_string(LOGIN_HTML.format(error=error, success=success)) + config_warning
+        return render_template_string(LOGIN_HTML, error=error, success=success) + config_warning
 
     generated_prompt = ""
     images_html = ""
@@ -410,7 +410,7 @@ def index():
                         error += f"<p style='color:orange;'>{images_html}</p>"
 
     credits = '∞' if session['credits'] == float('inf') else session['credits']
-    return render_template_string(MAIN_HTML.format(
+    return render_template_string(MAIN_HTML, 
         credits=credits,
         use_controlnet=use_controlnet,
         denoising=denoising,
@@ -421,7 +421,7 @@ def index():
         generated_prompt=generated_prompt,
         images_html=images_html,
         buy_info=buy_info
-    )) + config_warning
+    ) + config_warning
 
 if __name__ == '__main__':
     app.run(debug=True)
