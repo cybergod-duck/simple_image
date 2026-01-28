@@ -9,7 +9,8 @@ from flask import Flask, request, session, render_template_string
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY')
 if not app.secret_key:
-    raise ValueError("FLASK_SECRET_KEY must be set in environment variables for secure sessions.")
+    app.secret_key = 'insecure_default_key_for_dev_only_change_this'  # Fallback for dev; set env var in production to avoid security risks.
+    app.logger.warning("FLASK_SECRET_KEY not set; using insecure fallback. Set it in environment variables for secure sessions.")
 
 # Load environment variables
 openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
@@ -316,17 +317,24 @@ def index():
     session.setdefault('content_mode', None)
     session.setdefault('voice_attempt', False)
 
-    # Config warning if key missing
+    # Config warning if keys missing
     config_warning = ""
+    missing_keys = []
     if not openrouter_key:
-        config_warning = """
+        missing_keys.append("OPENROUTER_API_KEY")
+    if not a1111_url or a1111_url == "http://127.0.0.1:7860":
+        missing_keys.append("A1111_URL")
+    if not os.getenv('FLASK_SECRET_KEY'):
+        missing_keys.append("FLASK_SECRET_KEY")
+    if missing_keys:
+        missing_list = "<br>• " + "<br>• ".join(missing_keys)
+        config_warning = f"""
         <div class="config-warning">
-        <strong>OpenRouter API key missing!</strong><br><br>
-        Get a free key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a>.<br>
-        Add in Vercel → Settings → Environment Variables:<br>
-        • Name: OPENROUTER_API_KEY<br>
-        • Value: your key (sk-or-...)<br><br>
-        Also set A1111_URL to your public A1111 endpoint (e.g., ngrok https URL).<br>
+        <strong>Missing environment variables!</strong><br><br>
+        Add these in Vercel → Settings → Environment Variables:{missing_list}<br><br>
+        For OPENROUTER_API_KEY: Get a free key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> (sk-or-...).<br>
+        For A1111_URL: Set to your public A1111 endpoint (e.g., ngrok HTTPS URL).<br>
+        For FLASK_SECRET_KEY: Generate a secure one (e.g., python -c 'import secrets; print(secrets.token_hex(32))') and set it.<br><br>
         Then redeploy.
         </div>
         """
