@@ -1,16 +1,13 @@
-# Fresh commit to clear Vercel failed deployment lock – 2026-01-28
 import os
-import time
-import random
 import base64
 import requests
 
-from flask import Flask, request, session, render_template_string
+from flask import Flask, request, session, render_template_string, redirect
 
 app = Flask(__name__)
 app.secret_key = os.getenv('FLASK_SECRET_KEY')
 if not app.secret_key:
-    app.secret_key = 'insecure_default_key_for_dev_only_change_this'  # Fallback for dev; set env var in production to avoid security risks.
+    app.secret_key = 'insecure_default_key_for_dev_only_change_this'  # Fallback for dev; set env var in production
     app.logger.warning("FLASK_SECRET_KEY not set; using insecure fallback. Set it in environment variables for secure sessions.")
 
 # Load environment variables
@@ -18,7 +15,7 @@ openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
 a1111_url = os.getenv("A1111_URL", "http://127.0.0.1:7860").strip()
 model = "venice/uncensored:free"
 
-# Custom CSS (updated for blur and overlay, with minor alignment tweaks)
+# Custom CSS
 CSS = """
 body { background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; }
 button {
@@ -30,7 +27,7 @@ button {
     font-weight: 600;
     box-shadow: 0 4px 12px rgba(139,0,0,0.4);
     cursor: pointer;
-    margin: 5px;  /* Added for better spacing */
+    margin: 5px;
 }
 button:hover { background: linear-gradient(145deg, #a00000, #d32f2f); }
 button:disabled {
@@ -108,7 +105,7 @@ textarea {
 }
 """
 
-# Login/Signup HTML template with age verification
+# Login/Signup HTML template
 LOGIN_HTML = f"""
 <html>
 <head>
@@ -196,15 +193,13 @@ MAIN_HTML = f"""
 </html>
 """
 
-# NSFW keywords for detection (simple heuristic)
+# NSFW keywords for preview blurring
 NSFW_KEYWORDS = {"sexy", "nude", "naked", "porn", "erotic", "adult", "explicit", "gore", "violent", "blood"}
 
 def is_nsfw(prompt: str) -> bool:
-    """Simple keyword-based NSFW detection to decide on blurring for previews."""
     return any(word in prompt.lower() for word in NSFW_KEYWORDS)
 
 def generate_prompt(desc: str, mode: str = None) -> str:
-    """Generate or enhance prompt using OpenRouter API."""
     if mode == "enhance":
         system_prompt = """
         You are an elite prompt engineer for image generation.
@@ -239,7 +234,6 @@ def generate_prompt(desc: str, mode: str = None) -> str:
         return f"Error: OpenRouter API failed - {str(e)}"
 
 def generate_image(prompt: str, refs, use_controlnet: bool, denoising: float, image_size: str, blur: bool = False):
-    """Generate image using A1111 API, with optional blur and overlay."""
     size_map = {
         "Banner Wide (1920×300)": (1920, 300),
         "Banner Narrow (728×90)": (728, 90),
@@ -262,11 +256,7 @@ def generate_image(prompt: str, refs, use_controlnet: bool, denoising: float, im
         ref_bytes = refs[0].read()
         init_img = base64.b64encode(ref_bytes).decode()
         endpoint = f"{a1111_url}/sdapi/v1/img2img"
-        payload = {
-            **base_payload,
-            "denoising_strength": denoising,
-            "init_images": [init_img]
-        }
+        payload = {**base_payload, "denoising_strength": denoising, "init_images": [init_img]}
         if use_controlnet:
             payload["alwayson_scripts"] = {
                 "ControlNet": {"args": [{
@@ -293,50 +283,46 @@ def generate_image(prompt: str, refs, use_controlnet: bool, denoising: float, im
             return "Warning: A1111 backend returned no images."
         images_html = ""
         for i, b64 in enumerate(res['images']):
-            try:
-                img_src = f"data:image/png;base64,{b64}"
-                polaroid_class = "polaroid blurred" if blur else "polaroid"
-                overlay = '<div class="overlay">FOR THE FULL EXPERIENCE MAKE AN ACCOUNT OR BUY SOME CREDITS</div>' if blur else ''
-                images_html += f'''
-                <div class="{polaroid_class}">
-                <img src="{img_src}">
-                {overlay}
-                <div class="caption">Creation {i+1}</div>
-                </div>
-                '''
-            except ValueError:
-                images_html += f"<p>Error: Image {i+1} decoding failed.</p>"
+            img_src = f"data:image/png;base64,{b64}"
+            polaroid_class = "polaroid blurred" if blur else "polaroid"
+            overlay = '<div class="overlay">FOR THE FULL EXPERIENCE MAKE AN ACCOUNT OR BUY SOME CREDITS</div>' if blur else ''
+            images_html += f'''
+            <div class="{polaroid_class}">
+            <img src="{img_src}">
+            {overlay}
+            <div class="caption">Creation {i+1}</div>
+            </div>
+            '''
         return images_html
     except requests.RequestException as e:
         return f"Error: A1111 rendering failed - {str(e)}. Ensure the endpoint is accessible."
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    # Initialize session
     session.setdefault('logged_in', False)
     session.setdefault('credits', 10)
     session.setdefault('content_mode', None)
     session.setdefault('voice_attempt', False)
 
-    # Config warning if keys missing
+    # Consolidated config warning for all critical env vars
     config_warning = ""
     missing_keys = []
     if not openrouter_key:
         missing_keys.append("OPENROUTER_API_KEY")
     if not a1111_url or a1111_url == "http://127.0.0.1:7860":
-        missing_keys.append("A1111_URL")
+        missing_keys.append("A1111_URL (must be public HTTPS, e.g., ngrok or localtunnel)")
     if not os.getenv('FLASK_SECRET_KEY'):
-        missing_keys.append("FLASK_SECRET_KEY")
+        missing_keys.append("FLASK_SECRET_KEY (generate with: python -c 'import secrets; print(secrets.token_hex(32))')")
     if missing_keys:
         missing_list = "<br>• " + "<br>• ".join(missing_keys)
         config_warning = f"""
         <div class="config-warning">
-        <strong>Missing environment variables!</strong><br><br>
-        Add these in Vercel → Settings → Environment Variables:{missing_list}<br><br>
-        For OPENROUTER_API_KEY: Get a free key at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a> (sk-or-...).<br>
-        For A1111_URL: Set to your public A1111 endpoint (e.g., ngrok HTTPS URL).<br>
-        For FLASK_SECRET_KEY: Generate a secure one (e.g., python -c 'import secrets; print(secrets.token_hex(32))') and set it.<br><br>
-        Then redeploy.
+        <strong>Missing required environment variables!</strong><br><br>
+        Add these in Vercel → Project Settings → Environment Variables:{missing_list}<br><br>
+        • OPENROUTER_API_KEY: free at <a href="https://openrouter.ai/keys" target="_blank">openrouter.ai/keys</a><br>
+        • A1111_URL: public HTTPS endpoint to your Automatic1111 server<br>
+        • FLASK_SECRET_KEY: secure random value for session signing<br><br>
+        Save and redeploy.
         </div>
         """
 
@@ -347,7 +333,7 @@ def index():
             age_confirm = request.form.get('age_confirm')
             if age_confirm == 'yes':
                 session['logged_in'] = True
-                return flask.redirect('/')
+                return redirect('/')
             elif age_confirm == 'no':
                 error = "<p style='color:red;'>You must be 18 or over to access full features.</p>"
             else:
@@ -356,17 +342,16 @@ def index():
             pw = request.form.get('pw', '').lower()
             if pw == 'duck' and not session['voice_attempt']:
                 session['voice_attempt'] = True
-                return flask.redirect('/')
+                return redirect('/')
             elif session['voice_attempt'] and pw == 'owner-unlocked':
                 session['logged_in'] = True
                 session['credits'] = float('inf')
                 success = "<p style='color:green;'>Owner privileges activated — unlimited generations.</p>"
-                return flask.redirect('/')
+                return redirect('/')
 
     if not session['logged_in']:
         return render_template_string(LOGIN_HTML.format(error=error, success=success)) + config_warning
 
-    # Main page logic (accessible even without login, but with restrictions)
     generated_prompt = ""
     images_html = ""
     buy_info = ""
@@ -413,7 +398,7 @@ def index():
             elif not openrouter_key:
                 error = "<p style='color:red;'>OpenRouter API key required – add in Vercel env vars.</p>"
             else:
-                session['credits'] -= 1 if session['logged_in'] else 0  # Free previews for non-logged-in
+                session['credits'] -= 1 if session['logged_in'] else 0
                 prompt = generate_prompt(desc, mode=content_mode if session['logged_in'] else None)
                 if "Error" in prompt:
                     error = f"<p style='color:red;'>{prompt}</p>"
