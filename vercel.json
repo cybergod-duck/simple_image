@@ -1,15 +1,16 @@
-// vercel.json
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
   "builds": [
     {
       "src": "app.py",
       "use": "@vercel/python"
     }
   ],
-  "rewrites": [
+  "routes": [
     {
-      "source": "/(.*)",
-      "destination": "app.py"
+      "src": "/(.*)",
+      "dest": "app.py"
     }
   ],
   "headers": [
