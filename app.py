@@ -1,3 +1,4 @@
+# Fresh commit to clear Vercel failed deployment lock – 2026-01-28
 import os
 import time
 import random
