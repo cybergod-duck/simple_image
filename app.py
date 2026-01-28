@@ -244,34 +244,39 @@ def generate_prompt(desc: str, mode: str = None) -> str:
         response = requests.post(url, headers=headers, json=data)
         response.raise_for_status()
         prediction = response.json()
+        if "id" not in prediction:
+            return "Error: Unexpected response format from Replicate API - missing prediction ID."
         prediction_id = prediction["id"]
         
-        # Poll for completion with timeout (max 60 seconds)
+        # Poll for completion with extended timeout (max 120 seconds)
         poll_url = f"https://api.replicate.com/v1/predictions/{prediction_id}"
         start_time = time.time()
-        while time.time() - start_time < 60:
+        while time.time() - start_time < 120:
             poll_response = requests.get(poll_url, headers=headers)
             poll_response.raise_for_status()
             result = poll_response.json()
+            if "status" not in result:
+                return "Error: Unexpected response format from Replicate API - missing status."
             status = result["status"]
             if status in ["succeeded", "failed", "canceled"]:
                 break
             time.sleep(2)  # Poll every 2 seconds
         
         if status == "succeeded":
+            if "output" not in result:
+                return "Error: Unexpected response format from Replicate API - missing output."
             # Output is typically a list of strings; join them
-            output = ''.join(result.get("output", []))
+            output = ''.join(result["output"])
             return output.strip()
         else:
-            return f"Error: Replicate prediction failed with status '{status}'"
+            app.logger.warning(f"Replicate prediction timed out or failed with status '{status}'")
+            return f"Error: Replicate prediction failed with status '{status}' - try again or check model load."
     except requests.exceptions.HTTPError as e:
         app.logger.error(f"Replicate API failed: {str(e)}")
         return f"Error: Replicate API failed - {e.response.status_code} {e.response.reason}"
     except requests.RequestException as e:
         app.logger.error(f"Replicate API connection error: {str(e)}")
         return "Error: Failed to connect to Replicate API. Check network or API status."
-    except KeyError:
-        return "Error: Unexpected response format from Replicate API."
 
 def generate_image(prompt: str, image_size: str, blur: bool = False):
     """Generate image using RunPod Serverless Automatic1111"""
