@@ -1,3 +1,4 @@
+# .vercelignore
 # Git-related
 .git
 .gitignore
