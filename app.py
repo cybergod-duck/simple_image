@@ -15,7 +15,7 @@ replicate_api_key = os.getenv("REPLICATE_API_KEY", "").strip()
 runpod_api_key = os.getenv("RUNPOD_API_KEY", "").strip()
 runpod_endpoint_id = os.getenv("RUNPOD_ENDPOINT_ID", "").strip()
 a1111_url = os.getenv("A1111_URL", "").strip()
-model = "spuuntries/hermes-2-pro-mistral-7b"
+model = "mistralai/mistral-7b-instruct-v0.2"
 model_version = "18285959857a649d7ce962183e9c8d04e71b7ca22986581cb00371536089952f"
 
 # Custom CSS
