@@ -191,26 +191,23 @@ MAIN_HTML = """
 </html>
 """
 
-def generate_prompt(desc: str, mode: str = None) -> str:
-    if mode == "enhance":
-        system_prompt = (
-            "You are an elite prompt engineer for image generation. "
-            "Enhance the user description for better results, make it more detailed and vivid. "
-            "Output ONLY the enhanced prompt, nothing else."
-        )
-    else:
-        system_prompt = (
-            "You are an elite prompt engineer. Create a detailed, photorealistic image prompt. "
-            "Output ONLY the final prompt, nothing else."
-        )
+def enhance_prompt(desc: str) -> str:
+    """Enhance prompt using Replicate Llama 2 via predictions API"""
+    if not replicate_api_key:
+        return "Error: API key missing"
+    
+    system_prompt = (
+        "You are an elite prompt engineer for image generation. "
+        "Enhance the user description for better results, make it more detailed and vivid. "
+        "Output ONLY the enhanced prompt, nothing else."
+    )
     
     headers = {"Authorization": f"Bearer {replicate_api_key}"}
     payload = {
         "model": "meta/llama-2-70b-chat",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": desc}
-        ]
+        "input": {
+            "prompt": f"[INST] <<SYS>>{system_prompt}<</SYS>>{desc} [/INST]"
+        }
     }
     
     try:
@@ -220,7 +217,7 @@ def generate_prompt(desc: str, mode: str = None) -> str:
         pred_id = data["id"]
         
         for _ in range(120):
-            time.sleep(2)
+            time.sleep(1)
             status_r = requests.get(f"https://api.replicate.com/v1/predictions/{pred_id}", headers=headers, timeout=10)
             status_r.raise_for_status()
             status_data = status_r.json()
@@ -228,14 +225,14 @@ def generate_prompt(desc: str, mode: str = None) -> str:
             if status_data["status"] == "succeeded":
                 output = status_data.get("output", "")
                 if isinstance(output, list):
-                    return output[0] if output else "Error: No output"
-                return output
+                    return "".join(output).strip()
+                return str(output).strip()
             elif status_data["status"] == "failed":
-                return "Error: Prompt generation failed"
+                return "Error: Enhancement failed"
         
         return "Error: Timeout"
     except:
-        return "Error: Failed to generate prompt"
+        return "Error: Failed to enhance"
 
 def generate_image(prompt: str, image_size: str):
     if not replicate_api_key:
@@ -248,7 +245,7 @@ def generate_image(prompt: str, image_size: str):
     }
     size = size_map.get(image_size, "square")
     
-    headers = {"Authorization": f"Bearer {replicate_api_key}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {replicate_api_key}"}
     payload = {
         "model": "black-forest-labs/flux-pro",
         "input": {
@@ -301,7 +298,6 @@ def index():
     images_html = ""
     desc = session.get("desc", "")
     image_size = session.get("image_size", "Square (1024x1024)")
-    content_mode = None
     
     if request.method == "POST":
         desc = request.form.get("desc", desc).strip()
@@ -314,7 +310,7 @@ def index():
                 error_main = '<p style="color:red;">Enter a description</p>'
             else:
                 status = '<div class="loading"><div class="spinner"></div>Enhancing prompt...</div>'
-                enhanced = generate_prompt(desc, mode="enhance")
+                enhanced = enhance_prompt(desc)
                 if not enhanced.startswith("Error"):
                     desc = enhanced
                     session["desc"] = desc
@@ -323,7 +319,8 @@ def index():
                     error_main = f'<p style="color:red;">{enhanced}</p>'
         
         elif "nsfw" in request.form:
-            content_mode = "nsfw"
+            desc = "NSFW: " + desc
+            session["desc"] = desc
         
         elif "generate" in request.form:
             if not desc:
@@ -332,17 +329,12 @@ def index():
                 error_main = '<p style="color:red;">API key missing</p>'
             else:
                 status = '<div class="loading"><div class="spinner"></div>Generating image... 1-2 minutes</div>'
-                prompt = generate_prompt(desc)
-                
-                if prompt.startswith("Error"):
-                    error_main = f'<p style="color:red;">{prompt}</p>'
-                else:
-                    img_url, img_error = generate_image(prompt, image_size)
-                    if img_error:
-                        error_main = f'<p style="color:red;">{img_error}</p>'
-                    elif img_url:
-                        images_html = f'<div class="polaroid"><img src="{img_url}" style="width:100%;border:1px solid #222;"><div class="caption">Generated</div></div>'
-                        status = '<p style="color:green;">✓ Done!</p>'
+                img_url, img_error = generate_image(desc, image_size)
+                if img_error:
+                    error_main = f'<p style="color:red;">{img_error}</p>'
+                elif img_url:
+                    images_html = f'<div class="polaroid"><img src="{img_url}" style="width:100%;border:1px solid #222;"><div class="caption">Generated</div></div>'
+                    status = '<p style="color:green;">✓ Done!</p>'
     
     selected_square = "selected" if image_size == "Square (1024x1024)" else ""
     selected_portrait = "selected" if image_size == "Portrait (768x1024)" else ""
