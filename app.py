@@ -5,11 +5,12 @@ import time
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
-openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
-fal_key = os.getenv("FAL_KEY", "").strip()
+
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
+FAL_API_KEY = os.getenv("FAL_KEY", "").strip()
 
 # Uncensored-style model on OpenRouter
-enhance_model = "arcee-ai/trinity-large-preview:free"
+ENHANCE_MODEL = "arcee-ai/trinity-large-preview:free"
 
 CSS = """
 body { background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
@@ -72,12 +73,12 @@ MAIN_HTML = f"""<html>
 function enhance() {
     const prompt = document.getElementById('prompt').value;
     if (!prompt) { alert('Please enter a description first'); return; }
-   
+  
     const btn = document.getElementById('enhanceBtn');
     btn.disabled = true;
     btn.textContent = 'ENHANCING...';
     document.getElementById('result').innerHTML = '<div class="success">Enhancing your prompt...</div>';
-   
+  
     fetch('/enhance', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -100,16 +101,15 @@ function enhance() {
         btn.textContent = 'ENHANCE';
     });
 }
-
 function generate() {
     const prompt = document.getElementById('prompt').value;
     if (!prompt) { alert('Please enter a description first'); return; }
-   
+  
     const btn = document.getElementById('generateBtn');
     btn.disabled = true;
     btn.textContent = 'GENERATING...';
     document.getElementById('result').innerHTML = '<div class="success">Generating image... this may take 30-60 seconds</div>';
-   
+  
     fetch('/generate', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -144,17 +144,20 @@ def index():
 def enhance():
     try:
         data = request.get_json()
-        prompt = data.get('prompt', '')
-        if not openrouter_key:
+        prompt = data.get('prompt', '').strip()
+        if not prompt:
+            return jsonify({'error': 'No prompt provided'}), 400
+        if not OPENROUTER_API_KEY:
             return jsonify({'error': 'OPENROUTER_API_KEY not configured'}), 500
+
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {openrouter_key}",
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                 "Content-Type": "application/json"
             },
             json={
-                "model": enhance_model,
+                "model": ENHANCE_MODEL,
                 "messages": [
                     {
                         "role": "system",
@@ -166,20 +169,20 @@ def enhance():
                             "Keep under 200 words. Just return the enhanced description, nothing else."
                         )
                     },
-                    {
-                        "role": "user",
-                        "content": f"{prompt}"
-                    }
+                    {"role": "user", "content": prompt}
                 ],
                 "max_tokens": 300
             },
             timeout=30
         )
-        if response.status_code != 200:
-            return jsonify({'error': f'OpenRouter API error: {response.status_code} - {response.text}'}), 500
+        response.raise_for_status()
         result = response.json()
         enhanced = result['choices'][0]['message']['content'].strip()
         return jsonify({'enhanced': enhanced})
+    except requests.RequestException as e:
+        return jsonify({'error': f'OpenRouter API error: {str(e)}'}), 500
+    except KeyError:
+        return jsonify({'error': 'Invalid response from OpenRouter'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -187,12 +190,14 @@ def enhance():
 def generate():
     try:
         data = request.get_json()
-        prompt = data.get('prompt', '')
-        if not fal_key:
+        prompt = data.get('prompt', '').strip()
+        if not prompt:
+            return jsonify({'error': 'No prompt provided'}), 400
+        if not FAL_API_KEY:
             return jsonify({'error': 'FAL_KEY not configured'}), 500
-        
-        queue_url = "https://queue.fal.ai/fal-ai/flux/dev"
-        
+
+        queue_url = "https://queue.fal.run/fal-ai/flux/dev"
+
         input_data = {
             "prompt": prompt,
             "image_size": {"width": 1024, "height": 1024},
@@ -202,69 +207,54 @@ def generate():
             "enable_safety_checker": False,
             "output_format": "png"
         }
-        
+
         # Submit to queue
         response = requests.post(
             queue_url,
             headers={
-                "Authorization": f"Key {fal_key}",
+                "Authorization": f"Key {FAL_API_KEY}",
                 "Content-Type": "application/json"
             },
             json={"input": input_data},
             timeout=30
         )
-        
+        response.raise_for_status()
         if response.status_code != 202:
-            return jsonify({'error': f'Fal.ai queue error: {response.status_code} - {response.text}'}), 500
-        
+            return jsonify({'error': f'Fal.ai queue submission failed: {response.text}'}), 500
+
         resp_data = response.json()
-        request_id = resp_data.get("request_id")
-        if not request_id:
-            return jsonify({'error': 'No request_id received'}), 500
-        
-        # Poll status with POST
-        status_url = "https://queue.fal.ai/queue/status"
-        result_url = "https://queue.fal.ai/queue/result"
-        
-        for _ in range(60):  # ~4 min max
+        status_url = resp_data.get("status_url")
+        if not status_url:
+            return jsonify({'error': 'No status_url received'}), 500
+
+        # Poll status
+        headers = {"Authorization": f"Key {FAL_API_KEY}"}
+        for attempt in range(90):  # Up to ~6 minutes
             time.sleep(4)
-            status_resp = requests.post(
-                status_url,
-                headers={
-                    "Authorization": f"Key {fal_key}",
-                    "Content-Type": "application/json"
-                },
-                json={"requestId": request_id},
-                timeout=10
-            )
-            if status_resp.status_code != 200:
-                continue
-            
+            status_resp = requests.get(status_url, headers=headers, timeout=10)
+            if status_resp.status_code not in (200, 202):
+                return jsonify({'error': f'Status check failed: {status_resp.status_code} - {status_resp.text}'}), 500
+
             status_data = status_resp.json()
             status = status_data.get("status")
-            
+
             if status == "COMPLETED":
-                # Get result
-                result_resp = requests.post(
-                    result_url,
-                    headers={
-                        "Authorization": f"Key {fal_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={"requestId": request_id},
-                    timeout=10
-                )
-                if result_resp.status_code == 200:
-                    result_data = result_resp.json()
-                    images = result_data.get("images", [])
-                    if images:
-                        return jsonify({'image_url': images[0]["url"]})
-                return jsonify({'error': 'Failed to get result'}), 500
+                result = status_data.get("response", {})
+                images = result.get("images", [])
+                if images:
+                    return jsonify({'image_url': images[0].get("url")})
+                else:
+                    return jsonify({'error': 'No images in response'}), 500
+
             elif status in ("FAILED", "CANCELLED"):
                 error_msg = status_data.get("error", "Unknown error")
-                return jsonify({'error': f'Generation failed: {error_msg}'}), 500
-        
+                return jsonify({'error': f'Generation {status.lower()}: {error_msg}'}), 500
+
         return jsonify({'error': 'Generation timed out'}), 500
-        
+
+    except requests.RequestException as e:
+        return jsonify({'error': f'Fal.ai API error: {str(e)}'}), 500
+    except KeyError:
+        return jsonify({'error': 'Invalid response from Fal.ai'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
