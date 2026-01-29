@@ -31,7 +31,7 @@ button {
     box-shadow: 0 0 10px #00bfff;
 }
 button:hover { background: linear-gradient(145deg, #00dfff, #009fff); }
-button:disabled { background: #333; color: #777: #777; cursor: not-allowed; box-shadow: none; }
+button:disabled { background: #333; color: #777; cursor: not-allowed; box-shadow: none; }
 .generate-btn { width: 100%; font-size: 18px; padding: 18px; }
 .image-container { margin: 20px 0; text-align: center; }
 .image-container img {
@@ -97,9 +97,9 @@ function enhance() {
     })
     .finally(() => {
         btn.disabled = false;
-        btn.textContent = 'EJNHANCE';
+        btn.textContent = 'ENHANCE';
     });
-}}
+}
 
 function generate() {
     const prompt = document.getElementById('prompt').value;
@@ -130,7 +130,7 @@ function generate() {
         btn.disabled = false;
         btn.textContent = 'GENERATE IMAGE';
     });
-}}
+}
 </script>
 </body>
 </html>
@@ -191,7 +191,7 @@ def generate():
         if not fal_key:
             return jsonify({'error': 'FAL_KEY not configured'}), 500
         
-        run_url = "https://queue.fal.ai/fal-ai/flux/dev"
+        queue_url = "https://queue.fal.ai/fal-ai/flux/dev"
         
         input_data = {
             "prompt": prompt,
@@ -203,9 +203,9 @@ def generate():
             "output_format": "png"
         }
         
-        # Submit request
+        # Submit to queue
         response = requests.post(
-            run_url,
+            queue_url,
             headers={
                 "Authorization": f"Key {fal_key}",
                 "Content-Type": "application/json"
@@ -214,39 +214,53 @@ def generate():
             timeout=30
         )
         
-        if response.status_code not in (200, 202):
-            return jsonify({'error': f'Fal.ai submit error: {response.status_code} - {response.text}'}), 500
+        if response.status_code != 202:
+            return jsonify({'error': f'Fal.ai queue error: {response.status_code} - {response.text}'}), 500
         
         resp_data = response.json()
+        request_id = resp_data.get("request_id")
+        if not request_id:
+            return jsonify({'error': 'No request_id received'}), 500
         
-        # If immediate result (rare for flux)
-        if "result" in resp_data and resp_data["result"].get("images"):
-            images = resp_data["result"]["images"]
-            return jsonify({'image_url': images[0]["url"]})
+        # Poll status with POST
+        status_url = "https://queue.fal.ai/queue/status"
+        result_url = "https://queue.fal.ai/queue/result"
         
-        # Otherwise, get status_url and poll
-        status_url = resp_data.get("status_url")
-        if not status_url:
-            return jsonify({'error': 'No status_url received'}), 500
-        
-        # Poll
-        for _ in range(60):  # Up to ~3 minutes
+        for _ in range(60):  # ~4 min max
             time.sleep(4)
-            status_resp = requests.get(
+            status_resp = requests.post(
                 status_url,
-                headers={"Authorization": f"Key {fal_key}"},
+                headers={
+                    "Authorization": f"Key {fal_key}",
+                    "Content-Type": "application/json"
+                },
+                json={"requestId": request_id},
                 timeout=10
             )
             if status_resp.status_code != 200:
                 continue
             
             status_data = status_resp.json()
-            if status_data.get("status") == "COMPLETED":
-                images = status_data.get("result", {}).get("images", [])
-                if images:
-                    return jsonify({'image_url': images[0]["url"]})
-                return jsonify({'error': 'No images in result'}), 500
-            elif status_data.get("status") in ("FAILED", "CANCELLED"):
+            status = status_data.get("status")
+            
+            if status == "COMPLETED":
+                # Get result
+                result_resp = requests.post(
+                    result_url,
+                    headers={
+                        "Authorization": f"Key {fal_key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={"requestId": request_id},
+                    timeout=10
+                )
+                if result_resp.status_code == 200:
+                    result_data = result_resp.json()
+                    images = result_data.get("images", [])
+                    if images:
+                        return jsonify({'image_url': images[0]["url"]})
+                return jsonify({'error': 'Failed to get result'}), 500
+            elif status in ("FAILED", "CANCELLED"):
                 error_msg = status_data.get("error", "Unknown error")
                 return jsonify({'error': f'Generation failed: {error_msg}'}), 500
         
