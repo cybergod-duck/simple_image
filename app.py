@@ -9,7 +9,8 @@ app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
 openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
 replicate_key = os.getenv("REPLICATE_API_KEY", "").strip()
 
-enhance_model = "enhance_model = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+# Uncensored-style model on OpenRouter
+enhance_model = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
 
 CSS = """
 body { background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
@@ -143,10 +144,10 @@ def enhance():
     try:
         data = request.get_json()
         prompt = data.get('prompt', '')
-        
+
         if not openrouter_key:
             return jsonify({'error': 'OPENROUTER_API_KEY not configured'}), 500
-        
+
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
@@ -157,19 +158,25 @@ def enhance():
                 "model": enhance_model,
                 "messages": [{
                     "role": "user",
-                    "content": f"Enhance this image description to be more vivid and detailed for an AI image generator. Keep it under 200 words. Just return the enhanced description, nothing else:\n\n{prompt}"
-                }]
+                    "content": (
+                        "Enhance this image description to be more vivid and detailed "
+                        "for an AI image generator. Keep it under 200 words. "
+                        "Just return the enhanced description, nothing else:\n\n"
+                        f"{prompt}"
+                    )
+                }],
+                "max_tokens": 300
             },
             timeout=30
         )
-        
+
         if response.status_code != 200:
-            return jsonify({'error': f'OpenRouter API error: {response.status_code}'}), 500
-        
+            return jsonify({'error': f'OpenRouter API error: {response.status_code} - {response.text}'}), 500
+
         result = response.json()
         enhanced = result['choices'][0]['message']['content'].strip()
         return jsonify({'enhanced': enhanced})
-    
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -178,10 +185,10 @@ def generate():
     try:
         data = request.get_json()
         prompt = data.get('prompt', '')
-        
+
         if not replicate_key:
             return jsonify({'error': 'REPLICATE_API_KEY not configured'}), 500
-        
+
         response = requests.post(
             "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
             headers={
@@ -198,14 +205,13 @@ def generate():
             },
             timeout=10
         )
-        
+
         if response.status_code != 201:
             return jsonify({'error': f'Replicate API error: {response.status_code} - {response.text}'}), 500
-        
+
         prediction = response.json()
-        prediction_id = prediction.get('id')
         get_url = prediction.get('urls', {}).get('get')
-        
+
         # Poll for completion
         for _ in range(60):
             time.sleep(2)
@@ -214,28 +220,33 @@ def generate():
                 headers={"Authorization": f"Token {replicate_key}"},
                 timeout=10
             )
-            
+
             if status_response.status_code != 200:
                 continue
-            
+
             status_data = status_response.json()
             status = status_data.get('status')
-            
+
             if status == 'succeeded':
                 output = status_data.get('output', [])
                 if output and len(output) > 0:
                     return jsonify({'image_url': output[0]})
                 return jsonify({'error': 'No image output received'}), 500
-            
+
             elif status == 'failed':
                 error_msg = status_data.get('error', 'Unknown error')
                 return jsonify({'error': f'Generation failed: {error_msg}'}), 500
-        
+
         return jsonify({'error': 'Generation timed out'}), 500
-    @app.route('/test-key', methods=['GET'])
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Simple route to test OpenRouter key and model
+@app.route('/test-key', methods=['GET'])
 def test_key():
     if not openrouter_key:
-        return jsonify({'status': 'No key loaded'}), 500
+        return jsonify({'status': 'No OPENROUTER_API_KEY loaded'}), 500
 
     try:
         response = requests.post(
@@ -249,7 +260,7 @@ def test_key():
                 "messages": [{"role": "user", "content": "test"}],
                 "max_tokens": 5
             },
-            timeout=10
+            timeout=15
         )
         return jsonify({
             "status_code": response.status_code,
@@ -257,7 +268,3 @@ def test_key():
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
