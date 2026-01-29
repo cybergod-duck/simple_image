@@ -2,7 +2,6 @@ from flask import Flask, request, jsonify, render_template_string
 import requests
 import os
 import time
-import base64
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
@@ -17,7 +16,7 @@ body { background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; m
 .container { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: row; }
 .left-column { width: 40%; padding-right: 20px; }
 .right-column { width: 60%; }
-h1 { color: #f4444; font-size: 2.5em; margin-bottom: 10px; text-shadow: 0 0 10px #00bfff; }
+h1 { color: #ff4444; font-size: 2.5em; margin-bottom: 10px; text-shadow: 0 0 10px #00bfff; }
 .tagline { color: #888; margin-bottom: 30px; }
 textarea {
     background-color: #1a1a1a; color: #eee; border: 2px solid #444;
@@ -34,14 +33,6 @@ button {
 button:hover { background: linear-gradient(145deg, #00dfff, #009fff); }
 button:disabled { background: #333; color: #777; cursor: not-allowed; box-shadow: none; }
 .generate-btn { width: 100%; font-size: 18px; padding: 18px; }
-.result-box {
-    background: #1a1a1a; border: 2px solid #444; border-radius: 8px;
-    padding: 20px; margin: 20px 0;
-}
-.result-box img {
-    max-width: 100%; border-radius: 8px;
-    box-shadow: 0 10px 30px rgba(255,0,0,0.3);
-}
 .image-container { margin: 20px 0; text-align: center; }
 .image-container img {
     max-width: 100%; border-radius: 8px;
@@ -53,8 +44,6 @@ button:disabled { background: #333; color: #777; cursor: not-allowed; box-shadow
     50% { box-shadow: 0 0 30px #fff; }
     100% { box-shadow: 0 0 20px #fff; }
 }
-.preview-container { margin: 20px 0; text-align: center; }
-.preview-container img { max-width: 200px; border-radius: 8px; }
 .error { color: #ff4444; background: #2a1a1a; padding: 15px; border-radius: 8px; margin: 15px 0; }
 .success { color: #44ff44; background: #1a2a1a; padding: 15px; border-radius: 8px; margin: 15px 0; }
 """
@@ -71,33 +60,15 @@ MAIN_HTML = f"""<html>
 <p class="tagline">Totally Uncensored Image Generation</p>
 <textarea id="prompt" placeholder="Describe your image..." rows="3"></textarea>
 <div class="button-row">
-<button id="uploadBtn" onclick="document.getElementById('fileInput').click()">UPLOAD REFERENCE</button>
 <button id="enhanceBtn" onclick="enhance()">ENHANCE</button>
 </div>
-<input type="file" id="fileInput" accept="image/*" style="display: none;">
 <button class="generate-btn" id="generateBtn" onclick="generate()">GENERATE IMAGE</button>
-<div id="preview"></div>
 </div>
 <div class="right-column">
 <div id="result"></div>
 </div>
 </div>
 <script>
-let imageData = null;
-
-document.getElementById('fileInput').addEventListener('change', function(event) {{
-    const file = event.target.files[0];
-    if (file) {{
-        const reader = new FileReader();
-        reader.onload = function(e) {{
-            imageData = e.target.result;
-            document.getElementById('preview').innerHTML = '<div class="preview-container"><img src="' + imageData + '" alt="Reference Preview"></div>';
-            document.getElementById('result').innerHTML = '<div class="success">Reference image uploaded! (Note: Reference images are not yet supported for generation.)</div>';
-        }};
-        reader.readAsDataURL(file);
-    }}
-}});
-
 function enhance() {{
     const prompt = document.getElementById('prompt').value;
     if (!prompt) {{ alert('Please enter a description first'); return; }}
@@ -139,15 +110,10 @@ function generate() {{
     btn.textContent = 'GENERATING...';
     document.getElementById('result').innerHTML = '<div class="success">Generating image... this may take 30-60 seconds</div>';
    
-    const payload = {{prompt: prompt}};
-    if (imageData) {{
-        // Note: Ignoring image data for now as not supported
-    }}
-   
     fetch('/generate', {{
         method: 'POST',
         headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify(payload)
+        body: JSON.stringify({{prompt: prompt}})
     }})
     .then(r => r.json())
     .then(data => {{
@@ -222,7 +188,6 @@ def generate():
     try:
         data = request.get_json()
         prompt = data.get('prompt', '')
-        # image_data = data.get('image_data', None)  # Ignoring for now
         if not replicate_key:
             return jsonify({'error': 'REPLICATE_API_KEY not configured'}), 500
         
