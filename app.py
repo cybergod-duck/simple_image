@@ -13,40 +13,40 @@ FAL_API_KEY = os.getenv("FAL_KEY", "").strip()
 ENHANCE_MODEL = "arcee-ai/trinity-large-preview:free"
 
 CSS = """
-body { background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
-.container { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: row; }
-.left-column { width: 40%; padding-right: 20px; }
-.right-column { width: 60%; }
-h1 { color: #ff4444; font-size: 2.5em; margin-bottom: 10px; text-shadow: 0 0 10px #00bfff; }
-.tagline { color: #888; margin-bottom: 30px; }
-textarea {
+body {{ background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; margin: 0; padding: 20px; }}
+.container {{ max-width: 1200px; margin: 0 auto; display: flex; flex-direction: row; }}
+.left-column {{ width: 40%; padding-right: 20px; }}
+.right-column {{ width: 60%; }}
+h1 {{ color: #ff4444; font-size: 2.5em; margin-bottom: 10px; text-shadow: 0 0 10px #00bfff; }}
+.tagline {{ color: #888; margin-bottom: 30px; }}
+textarea {{
     background-color: #1a1a1a; color: #eee; border: 2px solid #444;
     border-radius: 8px; width: 100%; min-height: 120px; padding: 15px;
     font-size: 16px; box-sizing: border-box; box-shadow: 0 0 10px #00bfff;
-}
-.button-row { display: flex; gap: 10px; margin: 15px 0; }
-button {
+}}
+.button-row {{ display: flex; gap: 10px; margin: 15px 0; }}
+button {{
     background: linear-gradient(145deg, #00bfff, #007fff); color: white;
     border: none; border-radius: 8px; padding: 15px 30px;
     font-weight: 600; font-size: 16px; cursor: pointer; flex: 1;
     box-shadow: 0 0 10px #00bfff;
-}
-button:hover { background: linear-gradient(145deg, #00dfff, #009fff); }
-button:disabled { background: #333; color: #777; cursor: not-allowed; box-shadow: none; }
-.generate-btn { width: 100%; font-size: 18px; padding: 18px; }
-.image-container { margin: 20px 0; text-align: center; }
-.image-container img {
+}}
+button:hover {{ background: linear-gradient(145deg, #00dfff, #009fff); }}
+button:disabled {{ background: #333; color: #777; cursor: not-allowed; box-shadow: none; }}
+.generate-btn {{ width: 100%; font-size: 18px; padding: 18px; }}
+.image-container {{ margin: 20px 0; text-align: center; }}
+.image-container img {{
     max-width: 100%; border-radius: 8px;
     box-shadow: 0 0 20px #fff;
     animation: pulse 2s infinite;
-}
-@keyframes pulse {
-    0% { box-shadow: 0 0 20px #fff; }
-    50% { box-shadow: 0 0 30px #fff; }
-    100% { box-shadow: 0 0 20px #fff; }
-}
-.error { color: #ff4444; background: #2a1a1a; padding: 15px; border-radius: 8px; margin: 15px 0; }
-.success { color: #44ff44; background: #1a2a1a; padding: 15px; border-radius: 8px; margin: 15px 0; }
+}}
+@keyframes pulse {{
+    0% {{ box-shadow: 0 0 20px #fff; }}
+    50% {{ box-shadow: 0 0 30px #fff; }}
+    100% {{ box-shadow: 0 0 20px #fff; }}
+}}
+.error {{ color: #ff4444; background: #2a1a1a; padding: 15px; border-radius: 8px; margin: 15px 0; }}
+.success {{ color: #44ff44; background: #1a2a1a; padding: 15px; border-radius: 8px; margin: 15px 0; }}
 """
 
 MAIN_HTML = f"""<html>
@@ -70,67 +70,67 @@ MAIN_HTML = f"""<html>
 </div>
 </div>
 <script>
-function enhance() {
+function enhance() {{
     const prompt = document.getElementById('prompt').value;
-    if (!prompt) { alert('Please enter a description first'); return; }
+    if (!prompt) {{ alert('Please enter a description first'); return; }}
   
     const btn = document.getElementById('enhanceBtn');
     btn.disabled = true;
     btn.textContent = 'ENHANCING...';
     document.getElementById('result').innerHTML = '<div class="success">Enhancing your prompt...</div>';
   
-    fetch('/enhance', {
+    fetch('/enhance', {{
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({prompt: prompt})
-    })
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{prompt: prompt}})
+    }})
     .then(r => r.json())
-    .then(data => {
-        if (data.error) {
+    .then(data => {{
+        if (data.error) {{
             document.getElementById('result').innerHTML = '<div class="error">Error: ' + data.error + '</div>';
-        } else {
+        }} else {{
             document.getElementById('prompt').value = data.enhanced;
             document.getElementById('result').innerHTML = '<div class="success">Prompt enhanced!</div>';
-        }
-    })
-    .catch(e => {
+        }}
+    }})
+    .catch(e => {{
         document.getElementById('result').innerHTML = '<div class="error">Enhancement failed: ' + e + '</div>';
-    })
-    .finally(() => {
+    }})
+    .finally(() => {{
         btn.disabled = false;
         btn.textContent = 'ENHANCE';
-    });
-}
-function generate() {
+    }});
+}}
+function generate() {{
     const prompt = document.getElementById('prompt').value;
-    if (!prompt) { alert('Please enter a description first'); return; }
+    if (!prompt) {{ alert('Please enter a description first'); return; }}
   
     const btn = document.getElementById('generateBtn');
     btn.disabled = true;
     btn.textContent = 'GENERATING...';
     document.getElementById('result').innerHTML = '<div class="success">Generating image... this may take 30-60 seconds</div>';
   
-    fetch('/generate', {
+    fetch('/generate', {{
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({prompt: prompt})
-    })
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{prompt: prompt}})
+    }})
     .then(r => r.json())
-    .then(data => {
-        if (data.error) {
+    .then(data => {{
+        if (data.error) {{
             document.getElementById('result').innerHTML = '<div class="error">Error: ' + data.error + '</div>';
-        } else if (data.image_url) {
+        }} else if (data.image_url) {{
             document.getElementById('result').innerHTML = '<div class="image-container"><img src="' + data.image_url + '" alt="Generated"/></div>';
-        }
-    })
-    .catch(e => {
+        }}
+    }})
+    .catch(e => {{
         document.getElementById('result').innerHTML = '<div class="error">Generation failed: ' + e + '</div>';
-    })
-    .finally(() => {
+    }})
+    .finally(() => {{
         btn.disabled = false;
         btn.textContent = 'GENERATE IMAGE';
-    });
-}
+    }});
+}}
 </script>
 </body>
 </html>
@@ -182,7 +182,7 @@ def enhance():
     except requests.RequestException as e:
         return jsonify({'error': f'OpenRouter API error: {str(e)}'}), 500
     except KeyError:
-        return jsonify({'error': 'Invalid response from OpenRouter'}), 500
+        return jupytext({'error': 'Invalid response from OpenRouter'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
