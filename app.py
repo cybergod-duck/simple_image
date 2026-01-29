@@ -10,8 +10,10 @@ openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
 replicate_key = os.getenv("REPLICATE_API_KEY", "").strip()
 
 # Uncensored-style model on OpenRouter
-enhance_model = "meta-llama/llama-3.1-8b-instruct"
-# or
+enhance_model = "arcee-ai/trinity-large-preview:free"
+# Previous options commented out
+# enhance_model = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+# enhance_model = "meta-llama/llama-3.1-8b-instruct"
 # enhance_model = "nousresearch/hermes-2-pro-llama-3-8b"
 
 CSS = """
