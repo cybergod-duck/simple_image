@@ -92,7 +92,7 @@ document.getElementById('fileInput').addEventListener('change', function(event) 
         reader.onload = function(e) {{
             imageData = e.target.result;
             document.getElementById('preview').innerHTML = '<div class="preview-container"><img src="' + imageData + '" alt="Reference Preview"></div>';
-            document.getElementById('result').innerHTML = '<div class="success">Reference image uploaded!</div>';
+            document.getElementById('result').innerHTML = '<div class="success">Reference image uploaded! (Note: Reference images are not yet supported for generation.)</div>';
         }};
         reader.readAsDataURL(file);
     }}
@@ -141,7 +141,7 @@ function generate() {{
    
     const payload = {{prompt: prompt}};
     if (imageData) {{
-        payload.image_data = imageData;
+        // Note: Ignoring image data for now as not supported
     }}
    
     fetch('/generate', {{
@@ -222,24 +222,20 @@ def generate():
     try:
         data = request.get_json()
         prompt = data.get('prompt', '')
-        image_data = data.get('image_data', None)
+        # image_data = data.get('image_data', None)  # Ignoring for now
         if not replicate_key:
             return jsonify({'error': 'REPLICATE_API_KEY not configured'}), 500
         
-        # Use uncensored Flux model for both t2i and i2i
-        model_path = "aisha-ai-official/flux.1dev-uncensored-newreality-a2"
+        model_path = "aisha-ai-official/flux.1dev-uncensored-msfluxnsfw-v3"
         
         input_data = {
             "prompt": prompt,
-            "aspect_ratio": "1:1",
-            "output_format": "png",
-            "num_inference_steps": 25  # Faster
+            "width": 1024,
+            "height": 1024,
+            "steps": 20,
+            "cfg_scale": 5,
+            "seed": -1
         }
-        
-        if image_data:
-            # For img2img
-            input_data["image"] = image_data
-            input_data["strength"] = 0.75
         
         response = requests.post(
             f"https://api.replicate.com/v1/models/{model_path}/predictions",
@@ -255,7 +251,7 @@ def generate():
         prediction = response.json()
         get_url = prediction.get('urls', {}).get('get')
         # Poll for completion
-        for _ in range(90):  # Longer timeout
+        for _ in range(90):
             time.sleep(2)
             status_response = requests.get(
                 get_url,
