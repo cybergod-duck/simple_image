@@ -10,7 +10,8 @@ openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
 replicate_key = os.getenv("REPLICATE_API_KEY", "").strip()
 
 # Uncensored-style model on OpenRouter (single, correct line)
-enhance_model = "cognitivecomputations/dolphin-mixtral-8x7b:free"
+enhance_model = enhance_model = "venice/uncensored:free"
+
 
 CSS = """
 body { background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
