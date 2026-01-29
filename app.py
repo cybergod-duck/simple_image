@@ -32,12 +32,6 @@ button:hover {
     background: linear-gradient(145deg, #a00000, #d32f2f);
 }
 
-button:disabled {
-    background: #333;
-    color: #777;
-    cursor: not-allowed;
-}
-
 textarea {
     background-color: #1a1a1a;
     color: #eee;
@@ -57,15 +51,6 @@ textarea {
 .main {
     margin-left: 280px;
     padding: 20px;
-}
-
-.config-warning {
-    background: #3c2f2f;
-    border-left: 5px solid #b22222;
-    padding: 16px;
-    margin: 24px 0;
-    border-radius: 6px;
-    font-size: 1.05em;
 }
 
 .polaroid {
@@ -219,14 +204,11 @@ MAIN_HTML = """
             <p>Simple-Image - Instant AI Generation | Atlanta | 2026</p>
         </form>
     </main>
-    {config_warning}
 </body>
 </html>
 """
 
 def generate_prompt(desc: str, mode: str = None) -> str:
-    """Generate or enhance prompt using Replicate API (Mistral 7B)"""
-    
     if mode == "enhance":
         system_prompt = (
             "You are an elite prompt engineer for image generation. "
@@ -239,10 +221,7 @@ def generate_prompt(desc: str, mode: str = None) -> str:
             "Output ONLY the final prompt, nothing else."
         )
     
-    headers = {
-        "Authorization": f"Bearer {replicate_api_key}",
-    }
-    
+    headers = {"Authorization": f"Bearer {replicate_api_key}"}
     payload = {
         "model": "mistral-7b",
         "messages": [
@@ -252,21 +231,13 @@ def generate_prompt(desc: str, mode: str = None) -> str:
     }
     
     try:
-        r = requests.post(
-            "https://api.replicate.com/v1/messages",
-            headers=headers,
-            json=payload,
-            timeout=60
-        )
+        r = requests.post("https://api.replicate.com/v1/messages", headers=headers, json=payload, timeout=60)
         r.raise_for_status()
         return r.json()["content"][0]["text"].strip()
-    except requests.RequestException as e:
-        app.logger.error(f"Replicate API error: {str(e)}")
-        return f"Error: {str(e)}"
+    except:
+        return "Error: Failed to enhance prompt"
 
 def generate_image(prompt: str, image_size: str):
-    """Generate image using Replicate API (Flux)"""
-    
     if not replicate_api_key:
         return None, "Error: REPLICATE_API_KEY missing"
     
@@ -277,11 +248,7 @@ def generate_image(prompt: str, image_size: str):
     }
     size = size_map.get(image_size, "square")
     
-    headers = {
-        "Authorization": f"Bearer {replicate_api_key}",
-        "Content-Type": "application/json"
-    }
-    
+    headers = {"Authorization": f"Bearer {replicate_api_key}", "Content-Type": "application/json"}
     payload = {
         "model": "black-forest-labs/flux-pro",
         "input": {
@@ -293,24 +260,14 @@ def generate_image(prompt: str, image_size: str):
     }
     
     try:
-        r = requests.post(
-            "https://api.replicate.com/v1/predictions",
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
+        r = requests.post("https://api.replicate.com/v1/predictions", headers=headers, json=payload, timeout=30)
         r.raise_for_status()
         data = r.json()
         prediction_id = data["id"]
         
         for attempt in range(60):
             time.sleep(5)
-            
-            status_r = requests.get(
-                f"https://api.replicate.com/v1/predictions/{prediction_id}",
-                headers=headers,
-                timeout=10
-            )
+            status_r = requests.get(f"https://api.replicate.com/v1/predictions/{prediction_id}", headers=headers, timeout=10)
             status_r.raise_for_status()
             status_data = status_r.json()
             
@@ -319,30 +276,18 @@ def generate_image(prompt: str, image_size: str):
                 if outputs:
                     return outputs[0], None
                 else:
-                    return None, "Error: No output from model"
-            
+                    return None, "Error: No output"
             elif status_data["status"] == "failed":
-                return None, f"Error: {status_data.get('error', 'Generation failed')}"
+                return None, f"Error: {status_data.get('error', 'Failed')}"
         
-        return None, "Error: Generation timeout"
-    
-    except requests.RequestException as e:
-        return None, f"Error: {str(e)}"
+        return None, "Error: Timeout"
+    except:
+        return None, "Error: API request failed"
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     session.setdefault("logged_in", False)
     session.setdefault("credits", 10)
-    
-    config_warning = ""
-    
-    if not replicate_api_key:
-        config_warning = """
-        <div class="config-warning">
-            <strong>⚠️ Missing REPLICATE_API_KEY</strong><br>
-            Add it to environment variables and redeploy.
-        </div>
-        """
     
     error = success = status = ""
     
@@ -354,7 +299,6 @@ def index():
                 return flask.redirect("/")
             else:
                 error = '<p style="color:red;">Must be 18+</p>'
-        
         elif "login" in request.form:
             pw = request.form.get("pw", "").lower()
             if pw == "owner-unlocked":
@@ -391,25 +335,22 @@ def index():
         
         elif "generate" in request.form:
             if not desc:
-                error = '<p style="color:red;">Describe what you want to generate</p>'
+                error = '<p style="color:red;">Describe what you want</p>'
             elif not replicate_api_key:
                 error = '<p style="color:red;">API key missing</p>'
             else:
-                status = '<div class="loading"><div class="spinner"></div>Generating image... This may take 1-2 minutes</div>'
-                
-                prompt = generate_prompt(desc, mode="generate")
+                status = '<div class="loading"><div class="spinner"></div>Generating image... 1-2 minutes</div>'
+                prompt = generate_prompt(desc)
                 
                 if prompt.startswith("Error"):
                     error = f'<p style="color:red;">{prompt}</p>'
                 else:
                     img_url, img_error = generate_image(prompt, image_size)
-                    
                     if img_error:
                         error = f'<p style="color:red;">{img_error}</p>'
                     elif img_url:
                         images_html = f'<div class="polaroid"><img src="{img_url}" style="width:100%;border:1px solid #222;"><div class="caption">Generated</div></div>'
-                        status = '<p style="color:green;">✓ Image generated!</p>'
-                        session["credits"] -= 1 if session["credits"] != float('inf') else 0
+                        status = '<p style="color:green;">✓ Done!</p>'
     
     credits = "∞" if session["credits"] == float('inf') else int(session["credits"])
     selected_square = "selected" if image_size == "Square (1024x1024)" else ""
@@ -427,7 +368,6 @@ def index():
             error=error,
             status=status,
             images_html=images_html,
-            config_warning=config_warning
         )
     )
 
