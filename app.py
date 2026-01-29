@@ -9,7 +9,7 @@ app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
 openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
 replicate_key = os.getenv("REPLICATE_API_KEY", "").strip()
 
-enhance_model = "mistralai/mistral-7b-instruct:free"
+enhance_model = "enhance_model = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
 
 CSS = """
 body { background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
@@ -232,7 +232,32 @@ def generate():
                 return jsonify({'error': f'Generation failed: {error_msg}'}), 500
         
         return jsonify({'error': 'Generation timed out'}), 500
-    
+    @app.route('/test-key', methods=['GET'])
+def test_key():
+    if not openrouter_key:
+        return jsonify({'status': 'No key loaded'}), 500
+
+    try:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {openrouter_key}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": enhance_model,
+                "messages": [{"role": "user", "content": "test"}],
+                "max_tokens": 5
+            },
+            timeout=10
+        )
+        return jsonify({
+            "status_code": response.status_code,
+            "response_preview": response.text[:400]
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
