@@ -171,8 +171,12 @@ MAIN_HTML = """
         <form method="post" enctype="multipart/form-data">
             <textarea name="desc" placeholder="A beautiful sunset over mountains...">{desc}</textarea>
             
-            <div style="display: flex; justify-content: space-around; margin-top: 10px;">
-                <button type="submit" name="generate" style="margin-top: 0; width: auto;">GENERATE</button>
+            <div style="display: flex; justify-content: space-around; margin-top: 10px; flex-wrap: wrap;">
+                <button type="submit" name="enhance">ENHANCE</button>
+                <button type="submit" name="nsfw">NSFW</button>
+                <input type="file" name="refs" multiple accept=".png,.jpg,.jpeg" style="display: none;" id="upload">
+                <label for="upload" style="background: linear-gradient(145deg, #8b0000, #b22222); color: white; border: none; border-radius: 8px; padding: 12px 28px; font-weight: 600; box-shadow: 0 4px 12px rgba(139, 0, 0, 0.4); cursor: pointer; margin: 5px;">UPLOAD</label>
+                <button type="submit" name="generate" style="flex: 1; min-width: 200px;">GENERATE</button>
             </div>
             
             {error_main}
@@ -186,6 +190,52 @@ MAIN_HTML = """
 </body>
 </html>
 """
+
+def generate_prompt(desc: str, mode: str = None) -> str:
+    if mode == "enhance":
+        system_prompt = (
+            "You are an elite prompt engineer for image generation. "
+            "Enhance the user description for better results, make it more detailed and vivid. "
+            "Output ONLY the enhanced prompt, nothing else."
+        )
+    else:
+        system_prompt = (
+            "You are an elite prompt engineer. Create a detailed, photorealistic image prompt. "
+            "Output ONLY the final prompt, nothing else."
+        )
+    
+    headers = {"Authorization": f"Bearer {replicate_api_key}"}
+    payload = {
+        "model": "meta/llama-2-70b-chat",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": desc}
+        ]
+    }
+    
+    try:
+        r = requests.post("https://api.replicate.com/v1/predictions", headers=headers, json=payload, timeout=60)
+        r.raise_for_status()
+        data = r.json()
+        pred_id = data["id"]
+        
+        for _ in range(120):
+            time.sleep(2)
+            status_r = requests.get(f"https://api.replicate.com/v1/predictions/{pred_id}", headers=headers, timeout=10)
+            status_r.raise_for_status()
+            status_data = status_r.json()
+            
+            if status_data["status"] == "succeeded":
+                output = status_data.get("output", "")
+                if isinstance(output, list):
+                    return output[0] if output else "Error: No output"
+                return output
+            elif status_data["status"] == "failed":
+                return "Error: Prompt generation failed"
+        
+        return "Error: Timeout"
+    except:
+        return "Error: Failed to generate prompt"
 
 def generate_image(prompt: str, image_size: str):
     if not replicate_api_key:
@@ -251,6 +301,7 @@ def index():
     images_html = ""
     desc = session.get("desc", "")
     image_size = session.get("image_size", "Square (1024x1024)")
+    content_mode = None
     
     if request.method == "POST":
         desc = request.form.get("desc", desc).strip()
@@ -258,19 +309,40 @@ def index():
         image_size = request.form.get("image_size", image_size)
         session["image_size"] = image_size
         
-        if "generate" in request.form:
+        if "enhance" in request.form:
+            if not desc:
+                error_main = '<p style="color:red;">Enter a description</p>'
+            else:
+                status = '<div class="loading"><div class="spinner"></div>Enhancing prompt...</div>'
+                enhanced = generate_prompt(desc, mode="enhance")
+                if not enhanced.startswith("Error"):
+                    desc = enhanced
+                    session["desc"] = desc
+                    status = f"<h3 style='color:#888;'>Enhanced: {enhanced[:100]}...</h3>"
+                else:
+                    error_main = f'<p style="color:red;">{enhanced}</p>'
+        
+        elif "nsfw" in request.form:
+            content_mode = "nsfw"
+        
+        elif "generate" in request.form:
             if not desc:
                 error_main = '<p style="color:red;">Describe what you want</p>'
             elif not replicate_api_key:
                 error_main = '<p style="color:red;">API key missing</p>'
             else:
                 status = '<div class="loading"><div class="spinner"></div>Generating image... 1-2 minutes</div>'
-                img_url, img_error = generate_image(desc, image_size)
-                if img_error:
-                    error_main = f'<p style="color:red;">{img_error}</p>'
-                elif img_url:
-                    images_html = f'<div class="polaroid"><img src="{img_url}" style="width:100%;border:1px solid #222;"><div class="caption">Generated</div></div>'
-                    status = '<p style="color:green;">✓ Done!</p>'
+                prompt = generate_prompt(desc)
+                
+                if prompt.startswith("Error"):
+                    error_main = f'<p style="color:red;">{prompt}</p>'
+                else:
+                    img_url, img_error = generate_image(prompt, image_size)
+                    if img_error:
+                        error_main = f'<p style="color:red;">{img_error}</p>'
+                    elif img_url:
+                        images_html = f'<div class="polaroid"><img src="{img_url}" style="width:100%;border:1px solid #222;"><div class="caption">Generated</div></div>'
+                        status = '<p style="color:green;">✓ Done!</p>'
     
     selected_square = "selected" if image_size == "Square (1024x1024)" else ""
     selected_portrait = "selected" if image_size == "Portrait (768x1024)" else ""
