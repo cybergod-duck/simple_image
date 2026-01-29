@@ -181,6 +181,7 @@ MAIN_HTML = """
             
             {error_main}
             {status}
+            {enhanced_prompt}
             {images_html}
             
             <hr>
@@ -192,26 +193,31 @@ MAIN_HTML = """
 """
 
 def enhance_prompt(desc: str) -> str:
-    """Enhance prompt using Replicate Llama 2 via predictions API"""
+    """Enhance prompt using Mistral 7B via Replicate predictions API"""
     if not replicate_api_key:
-        return "Error: API key missing"
+        return None
     
-    system_prompt = (
+    system_msg = (
         "You are an elite prompt engineer for image generation. "
-        "Enhance the user description for better results, make it more detailed and vivid. "
+        "Enhance the user description for better results. Make it more detailed, vivid, and specific. "
         "Output ONLY the enhanced prompt, nothing else."
     )
     
+    prompt_text = f"[INST] {system_msg}\n\nUser description: {desc} [/INST]"
+    
     headers = {"Authorization": f"Bearer {replicate_api_key}"}
     payload = {
-        "model": "meta/llama-2-70b-chat",
+        "model": "mistralai/mistral-7b-instruct-v0.1",
         "input": {
-            "prompt": f"[INST] <<SYS>>{system_prompt}<</SYS>>{desc} [/INST]"
+            "prompt": prompt_text,
+            "max_tokens": 500,
+            "temperature": 0.7,
+            "top_p": 0.95,
         }
     }
     
     try:
-        r = requests.post("https://api.replicate.com/v1/predictions", headers=headers, json=payload, timeout=60)
+        r = requests.post("https://api.replicate.com/v1/predictions", headers=headers, json=payload, timeout=30)
         r.raise_for_status()
         data = r.json()
         pred_id = data["id"]
@@ -223,16 +229,17 @@ def enhance_prompt(desc: str) -> str:
             status_data = status_r.json()
             
             if status_data["status"] == "succeeded":
-                output = status_data.get("output", "")
-                if isinstance(output, list):
-                    return "".join(output).strip()
-                return str(output).strip()
+                output = status_data.get("output", [])
+                if isinstance(output, list) and output:
+                    result = "".join(output).strip()
+                    return result if result else None
+                return None
             elif status_data["status"] == "failed":
-                return "Error: Enhancement failed"
+                return None
         
-        return "Error: Timeout"
+        return None
     except:
-        return "Error: Failed to enhance"
+        return None
 
 def generate_image(prompt: str, image_size: str):
     if not replicate_api_key:
@@ -286,7 +293,7 @@ def index():
     session.setdefault("logged_in", True)
     session.setdefault("credits", float('inf'))
     
-    error = success = error_main = status = ""
+    error = success = error_main = status = enhanced_prompt = ""
     
     if request.method == "POST" and "owner_login" in request.form:
         pw = request.form.get("pw", "").lower()
@@ -311,18 +318,20 @@ def index():
             else:
                 status = '<div class="loading"><div class="spinner"></div>Enhancing prompt...</div>'
                 enhanced = enhance_prompt(desc)
-                if not enhanced.startswith("Error"):
+                if enhanced:
                     desc = enhanced
                     session["desc"] = desc
-                    status = f"<h3 style='color:#888;'>Enhanced: {enhanced[:100]}...</h3>"
+                    enhanced_prompt = f"<h3 style='color:#888; margin-top:20px;'>✓ Enhanced Prompt</h3><p style='background:#1a1a1a; padding:12px; border-radius:6px; border-left:3px solid #b22222;'>{enhanced}</p>"
+                    status = ""
                 else:
-                    error_main = f'<p style="color:red;">{enhanced}</p>'
+                    error_main = '<p style="color:red;">Enhancement failed. Try again.</p>'
+                    status = ""
         
         elif "nsfw" in request.form:
-            desc = "NSFW: " + desc
+            desc = "NSFW, explicit, adult content: " + desc
             session["desc"] = desc
         
-        elif "generate" in request.form:
+        if "generate" in request.form:
             if not desc:
                 error_main = '<p style="color:red;">Describe what you want</p>'
             elif not replicate_api_key:
@@ -332,6 +341,7 @@ def index():
                 img_url, img_error = generate_image(desc, image_size)
                 if img_error:
                     error_main = f'<p style="color:red;">{img_error}</p>'
+                    status = ""
                 elif img_url:
                     images_html = f'<div class="polaroid"><img src="{img_url}" style="width:100%;border:1px solid #222;"><div class="caption">Generated</div></div>'
                     status = '<p style="color:green;">✓ Done!</p>'
@@ -351,6 +361,7 @@ def index():
             success=success,
             error_main=error_main,
             status=status,
+            enhanced_prompt=enhanced_prompt,
             images_html=images_html,
         )
     )
