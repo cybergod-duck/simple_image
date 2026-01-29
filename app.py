@@ -74,7 +74,7 @@ function enhance() {{
     if (!prompt) {{ alert('Please enter a description first'); return; }}
    
     const btn = document.getElementById('enhanceBtn');
-    btn.disabled true;
+    btn.disabled = true;
     btn.textContent = 'ENHANCING...';
     document.getElementById('result').innerHTML = '<div class="success">Enhancing your prompt...</div>';
    
@@ -191,7 +191,7 @@ def generate():
         if not fal_key:
             return jsonify({'error': 'FAL_KEY not configured (add your fal.ai API key as env var FAL_KEY)'}), 500
         
-        model_url = "https://fal.ai/models/fal-ai/flux/dev"
+        model_url = "https://fal.ai/models/fal-ai/flux/dev/api"
         
         input_data = {
             "prompt": prompt,
@@ -199,96 +199,29 @@ def generate():
             "num_inference_steps": 28,
             "guidance_scale": 3.5,
             "num_images": 1,
-            "enable_safety_checker": False,  # This disables filters for fully uncensored/NSFW
-            "output_format": "png"
+            "enable_safety_checker": False,
+            "sync_mode": True  # Try sync first for faster response
         }
         
-        # Submit generation request
         response = requests.post(
             model_url,
             headers={
                 "Authorization": f"Key {fal_key}",
                 "Content-Type": "application/json"
             },
-            json={"input": input_data},
-            timeout=30
+            json=input_data,
+            timeout=120
         )
-        if response.status_code not in (200, 202):
+        
+        if response.status_code == 200:
+            result_data = response.json()
+            images = result_data.get("images", [])
+            if images:
+                return jsonify({'image_url': images[0]["url"]})
+            else:
+                return jsonify({'error': 'No image returned'}), 500
+        else:
             return jsonify({'error': f'Fal.ai API error: {response.status_code} - {response.text}'}), 500
-        
-        resp_data = response.json()
-        request_id = resp_data.get("request_id")
-        if not request_id:
-            return jsonify({'error': 'No request_id received from fal.ai'}), 500
-        
-        status_url = f"{model_url}/queue/status"
-        result_url = f"{model_url}/queue/result"
-        
-        # Poll for completion
-        for _ in range(60):  # ~3 minutes max
-            time.sleep(3)
-            status_resp = requests.post(
-                status_url,
-                headers={
-                    "Authorization": f"Key {fal_key}",
-                    "Content-Type": "application/json"
-                },
-                json={"requestId": request_id},
-                timeout=10
-            )
-            if status_resp.status_code != 200:
-                continue
-            
-            status_data = status_resp.json()
-            status = status_data.get("status")
-            
-            if status == "COMPLETED":
-                result_resp = requests.post(
-                    result_url,
-                    headers={
-                        "Authorization": f"Key {fal_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={"requestId": request_id},
-                    timeout=10
-                )
-                if result_resp.status_code == 200:
-                    result_data = result_resp.json()
-                    images = result_data.get("data", {}).get("images", [])
-                    if images:
-                        return jsonify({'image_url': images[0]["url"]})
-                return jsonify({'error': 'Failed to retrieve result'}), 500
-            
-            elif status in ("FAILED", "CANCELLED"):
-                error_msg = status_data.get("error", "Unknown error")
-                return jsonify({'error': f'Generation failed: {error_msg}'}), 500
-        
-        return jsonify({'error': 'Generation timed out'}), 500
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
-@app.route('/test-key', methods=['GET'])
-def test_key():
-    if not openrouter_key:
-        return jsonify({'status': 'No OPENROUTER_API_KEY loaded'}), 500
-    try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {openrouter_key}",
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": enhance_model,
-                "messages": [{"role": "user", "content": "test"}],
-                "max_tokens": 5
-            },
-            timeout=15
-        )
-        return jsonify({
-            "status_code": response.status_code,
-            "response_preview": response.text[:400]
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
