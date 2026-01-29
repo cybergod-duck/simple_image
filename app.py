@@ -81,86 +81,86 @@ MAIN_HTML = f"""<html>
 <script>
 let imageData = null;
 
-document.getElementById('fileInput').addEventListener('change', function(event) {
+document.getElementById('fileInput').addEventListener('change', function(event) {{
     const file = event.target.files[0];
-    if (file) {
+    if (file) {{
         const reader = new FileReader();
-        reader.onload = function(e) {
+        reader.onload = function(e) {{
             imageData = e.target.result;
             document.getElementById('preview').innerHTML = '<div class="preview-container"><img src="' + imageData + '" alt="Reference Preview"></div>';
             document.getElementById('result').innerHTML = '<div class="success">Reference image uploaded!</div>';
-        };
+        }};
         reader.readAsDataURL(file);
-    }
-});
+    }}
+}});
 
-function enhance() {
+function enhance() {{
     const prompt = document.getElementById('prompt').value;
-    if (!prompt) { alert('Please enter a description first'); return; }
+    if (!prompt) {{ alert('Please enter a description first'); return; }}
    
     const btn = document.getElementById('enhanceBtn');
     btn.disabled = true;
     btn.textContent = 'ENHANCING...';
     document.getElementById('result').innerHTML = '<div class="success">Enhancing your prompt...</div>';
    
-    fetch('/enhance', {
+    fetch('/enhance', {{
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({prompt: prompt})
-    })
+        headers: {{'Content-Type': 'application/json'}},
+        body: JSON.stringify({{prompt: prompt}})
+    }})
     .then(r => r.json())
-    .then(data => {
-        if (data.error) {
+    .then(data => {{
+        if (data.error) {{
             document.getElementById('result').innerHTML = '<div class="error">Error: ' + data.error + '</div>';
-        } else {
+        }} else {{
             document.getElementById('prompt').value = data.enhanced;
             document.getElementById('result').innerHTML = '<div class="success">Prompt enhanced!</div>';
-        }
-    })
-    .catch(e => {
+        }}
+    }})
+    .catch(e => {{
         document.getElementById('result').innerHTML = '<div class="error">Enhancement failed: ' + e + '</div>';
-    })
-    .finally(() => {
+    }})
+    .finally(() => {{
         btn.disabled = false;
         btn.textContent = 'ENHANCE';
-    });
-}
+    }});
+}}
 
-function generate() {
+function generate() {{
     const prompt = document.getElementById('prompt').value;
-    if (!prompt) { alert('Please enter a description first'); return; }
+    if (!prompt) {{ alert('Please enter a description first'); return; }}
    
     const btn = document.getElementById('generateBtn');
     btn.disabled = true;
     btn.textContent = 'GENERATING...';
     document.getElementById('result').innerHTML = '<div class="success">Generating image... this may take 30-60 seconds</div>';
    
-    const payload = {prompt: prompt};
-    if (imageData) {
+    const payload = {{prompt: prompt}};
+    if (imageData) {{
         payload.image_data = imageData;
-    }
+    }}
    
-    fetch('/generate', {
+    fetch('/generate', {{
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: {{'Content-Type': 'application/json'}},
         body: JSON.stringify(payload)
-    })
+    }})
     .then(r => r.json())
-    .then(data => {
-        if (data.error) {
+    .then(data => {{
+        if (data.error) {{
             document.getElementById('result').innerHTML = '<div class="error">Error: ' + data.error + '</div>';
-        } else if (data.image_url) {
+        }} else if (data.image_url) {{
             document.getElementById('result').innerHTML = '<div class="image-container"><img src="' + data.image_url + '" alt="Generated"/></div>';
-        }
-    })
-    .catch(e => {
+        }}
+    }})
+    .catch(e => {{
         document.getElementById('result').innerHTML = '<div class="error">Generation failed: ' + e + '</div>';
-    })
-    .finally(() => {
+    }})
+    .finally(() => {{
         btn.disabled = false;
         btn.textContent = 'GENERATE IMAGE';
-    });
-}
+    }});
+}}
 </script>
 </body>
 </html>
@@ -227,7 +227,7 @@ def generate():
             model_path = "black-forest-labs/flux-dev"
             input_data = {
                 "prompt": prompt,
-                "image": image_data,  # data URI
+                "image": image_data,  # data URI should work as per Replicate's support for base64 data URLs
                 "strength": 0.75,
                 "aspect_ratio": "1:1",
                 "output_format": "png",
