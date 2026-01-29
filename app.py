@@ -134,35 +134,6 @@ textarea {
 }
 """
 
-LOGIN_HTML = """
-<html>
-<head>
-    <title>Simple-Image</title>
-    <style>{CSS}</style>
-</head>
-<body>
-    <h1>🍊 Simple-Image</h1>
-    <p>Create impressive images instantly.</p>
-    
-    <form method="post">
-        <label>Are you 18 or over?
-            <input type="radio" name="age_confirm" value="yes"> Yes
-            <input type="radio" name="age_confirm" value="no"> No
-        </label><br>
-        <button type="submit" name="signup">Sign Up</button>
-    </form>
-    
-    <form method="post">
-        <input type="password" name="pw" placeholder="Owner phrase">
-        <button type="submit" name="login">Owner Login</button>
-    </form>
-    
-    {error}
-    {success}
-</body>
-</html>
-"""
-
 MAIN_HTML = """
 <html>
 <head>
@@ -172,7 +143,7 @@ MAIN_HTML = """
 <body>
     <aside class="sidebar">
         <h2>🍊 Simple-Image</h2>
-        <p><strong>Credits:</strong> {credits}</p>
+        <p><strong>Unlimited</strong></p>
         
         <select name="image_size">
             <option {selected_square}>Square (1024x1024)</option>
@@ -181,12 +152,21 @@ MAIN_HTML = """
         </select>
         
         <hr>
-        <p style="font-size: 0.9em; color: #999;">Powered by Replicate</p>
+        <h4>Owner Login</h4>
+        <form method="post" style="max-width: 100%;">
+            <input type="password" name="pw" placeholder="Owner password" style="width: 100%; padding: 8px; margin-bottom: 5px;">
+            <button type="submit" name="owner_login" style="width: 100%; margin: 0;">Unlock</button>
+        </form>
+        {error}
+        {success}
+        
+        <hr>
+        <p style="font-size: 0.9em; color: #999;">Powered by Replicate Flux</p>
     </aside>
     
     <main class="main">
         <h1>🍊 Simple-Image</h1>
-        <p>Describe exactly what you want. AI generates it instantly.</p>
+        <p>Describe what you want. AI generates it in 1-2 minutes.</p>
         
         <form method="post" enctype="multipart/form-data">
             <textarea name="desc" placeholder="A beautiful sunset over mountains...">{desc}</textarea>
@@ -196,7 +176,7 @@ MAIN_HTML = """
                 <button type="submit" name="generate" style="margin-top: 0; width: auto;">GENERATE</button>
             </div>
             
-            {error}
+            {error_main}
             {status}
             {images_html}
             
@@ -281,34 +261,22 @@ def generate_image(prompt: str, image_size: str):
                 return None, f"Error: {status_data.get('error', 'Failed')}"
         
         return None, "Error: Timeout"
-    except:
-        return None, "Error: API request failed"
+    except Exception as e:
+        return None, f"Error: {str(e)}"
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    session.setdefault("logged_in", False)
-    session.setdefault("credits", 10)
+    session.setdefault("logged_in", True)
+    session.setdefault("credits", float('inf'))
     
-    error = success = status = ""
+    error = success = error_main = status = ""
     
-    if request.method == "POST" and not session["logged_in"]:
-        if "signup" in request.form:
-            age = request.form.get("age_confirm", "").lower()
-            if age == "yes":
-                session["logged_in"] = True
-                return flask.redirect("/")
-            else:
-                error = '<p style="color:red;">Must be 18+</p>'
-        elif "login" in request.form:
-            pw = request.form.get("pw", "").lower()
-            if pw == "owner-unlocked":
-                session["logged_in"] = True
-                session["credits"] = float('inf')
-                success = '<p style="color:green;">✓ Owner unlocked</p>'
-                return flask.redirect("/")
-    
-    if not session["logged_in"]:
-        return render_template_string(LOGIN_HTML.format(CSS=CSS, error=error, success=success))
+    if request.method == "POST" and "owner_login" in request.form:
+        pw = request.form.get("pw", "").lower()
+        if pw == "owner-unlocked":
+            success = '<p style="color:green;">✓ Owner unlocked</p>'
+        else:
+            error = '<p style="color:red;">Wrong password</p>'
     
     images_html = ""
     desc = session.get("desc", "")
@@ -322,7 +290,7 @@ def index():
         
         if "enhance" in request.form:
             if not desc:
-                error = '<p style="color:red;">Enter a description</p>'
+                error_main = '<p style="color:red;">Enter a description</p>'
             else:
                 status = '<div class="loading"><div class="spinner"></div>Enhancing prompt...</div>'
                 enhanced = generate_prompt(desc, mode="enhance")
@@ -331,28 +299,27 @@ def index():
                     session["desc"] = desc
                     status = f"<h3 style='color:#888;'>Enhanced: {enhanced[:100]}...</h3>"
                 else:
-                    error = f'<p style="color:red;">{enhanced}</p>'
+                    error_main = f'<p style="color:red;">{enhanced}</p>'
         
         elif "generate" in request.form:
             if not desc:
-                error = '<p style="color:red;">Describe what you want</p>'
+                error_main = '<p style="color:red;">Describe what you want</p>'
             elif not replicate_api_key:
-                error = '<p style="color:red;">API key missing</p>'
+                error_main = '<p style="color:red;">API key missing</p>'
             else:
                 status = '<div class="loading"><div class="spinner"></div>Generating image... 1-2 minutes</div>'
                 prompt = generate_prompt(desc)
                 
                 if prompt.startswith("Error"):
-                    error = f'<p style="color:red;">{prompt}</p>'
+                    error_main = f'<p style="color:red;">{prompt}</p>'
                 else:
                     img_url, img_error = generate_image(prompt, image_size)
                     if img_error:
-                        error = f'<p style="color:red;">{img_error}</p>'
+                        error_main = f'<p style="color:red;">{img_error}</p>'
                     elif img_url:
                         images_html = f'<div class="polaroid"><img src="{img_url}" style="width:100%;border:1px solid #222;"><div class="caption">Generated</div></div>'
                         status = '<p style="color:green;">✓ Done!</p>'
     
-    credits = "∞" if session["credits"] == float('inf') else int(session["credits"])
     selected_square = "selected" if image_size == "Square (1024x1024)" else ""
     selected_portrait = "selected" if image_size == "Portrait (768x1024)" else ""
     selected_landscape = "selected" if image_size == "Landscape (1024x768)" else ""
@@ -360,12 +327,13 @@ def index():
     return render_template_string(
         MAIN_HTML.format(
             CSS=CSS,
-            credits=credits,
             selected_square=selected_square,
             selected_portrait=selected_portrait,
             selected_landscape=selected_landscape,
             desc=desc,
             error=error,
+            success=success,
+            error_main=error_main,
             status=status,
             images_html=images_html,
         )
