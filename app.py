@@ -9,8 +9,8 @@ app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
 openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
 replicate_key = os.getenv("REPLICATE_API_KEY", "").strip()
 
-# Uncensored-style model on OpenRouter
-enhance_model = "enhance_model = "cognitivecomputations/dolphin-mixtral-8x7b:free"
+# Uncensored-style model on OpenRouter (single, correct line)
+enhance_model = "cognitivecomputations/dolphin-mixtral-8x7b:free"
 
 CSS = """
 body { background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
@@ -242,7 +242,6 @@ def generate():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Simple route to test OpenRouter key and model
 @app.route('/test-key', methods=['GET'])
 def test_key():
     if not openrouter_key:
