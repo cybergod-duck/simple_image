@@ -1,19 +1,13 @@
 import flask
 from flask import Flask, request, session, render_template_string
 import requests
-import base64
 import os
 import time
-import random
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
 
-# Load environment variables
 replicate_api_key = os.getenv("REPLICATE_API_KEY", "").strip()
-runpod_api_key = os.getenv("RUNPOD_API_KEY", "").strip()
-runpod_endpoint_id = os.getenv("RUNPOD_ENDPOINT_ID", "").strip()
-a1111_url = os.getenv("A1111_URL", "").strip()
 
 CSS = """
 body {
@@ -133,24 +127,25 @@ textarea {
     }
 }
 
-.blurred {
-    position: relative;
-}
-
-.blurred img {
-    filter: blur(10px);
-}
-
-.blurred .overlay {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(0,0,0,0.7);
-    color: white;
-    padding: 20px;
-    border-radius: 10px;
+.loading {
     text-align: center;
+    padding: 20px;
+    color: #888;
+}
+
+.spinner {
+    border: 4px solid #333;
+    border-top: 4px solid #b22222;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    animation: spin 1s linear infinite;
+    margin: 20px auto;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 """
 
@@ -162,7 +157,7 @@ LOGIN_HTML = """
 </head>
 <body>
     <h1>🍊 Simple-Image</h1>
-    <p>Create impressive images for free, or sign up for full access.</p>
+    <p>Create impressive images instantly.</p>
     
     <form method="post">
         <label>Are you 18 or over?
@@ -194,61 +189,40 @@ MAIN_HTML = """
         <h2>🍊 Simple-Image</h2>
         <p><strong>Credits:</strong> {credits}</p>
         
-        <label>
-            <input type="checkbox" name="use_controlnet" {checked_controlnet}>
-            Enable ControlNet
-        </label>
-        
-        <label>Denoising Strength
-            <input type="range" name="denoising" min="0" max="1" step="0.05" value="{denoising}">
-        </label>
-        
         <select name="image_size">
-            <option {selected_banner_wide}>Banner Wide (1920x300)</option>
-            <option {selected_banner_narrow}>Banner Narrow (728x90)</option>
             <option {selected_square}>Square (1024x1024)</option>
             <option {selected_portrait}>Portrait (768x1024)</option>
+            <option {selected_landscape}>Landscape (1024x768)</option>
         </select>
         
         <hr>
-        <button type="submit" name="buy_credits">Buy More Credits</button>
-        {buy_info}
+        <p style="font-size: 0.9em; color: #999;">Powered by Replicate</p>
     </aside>
     
     <main class="main">
         <h1>🍊 Simple-Image</h1>
-        <p>Unfiltered. Hyper-realistic. No limits. Describe exactly what you want.</p>
+        <p>Describe exactly what you want. AI generates it instantly.</p>
         
         <form method="post" enctype="multipart/form-data">
-            <textarea name="desc" placeholder="Describe the scene...">{desc}</textarea>
+            <textarea name="desc" placeholder="A beautiful sunset over mountains...">{desc}</textarea>
             
             <div style="display: flex; justify-content: space-around; margin-top: 10px;">
                 <button type="submit" name="enhance">ENHANCE</button>
-                <button type="submit" name="nsfw" {disabled_nsfw}>NSFW</button>
-                <button type="submit" name="violence" {disabled_violence}>VIOLENCE</button>
-                <input type="file" name="refs" multiple accept=".png,.jpg,.jpeg" style="display: none;" id="upload">
-                <label for="upload" style="background: linear-gradient(145deg, #8b0000, #b22222); color: white; border: none; border-radius: 8px; padding: 12px 28px; font-weight: 600; box-shadow: 0 4px 12px rgba(139, 0, 0, 0.4); cursor: pointer;">UPLOAD</label>
+                <button type="submit" name="generate" style="margin-top: 0; width: auto;">GENERATE</button>
             </div>
             
-            <button type="submit" name="generate" style="margin-top: 20px; width: 100%;">GENERATE</button>
-            
             {error}
-            {generated_prompt}
+            {status}
             {images_html}
             
             <hr>
-            <p>Simple-Image - Absolute freedom | Atlanta | 2026</p>
+            <p>Simple-Image - Instant AI Generation | Atlanta | 2026</p>
         </form>
     </main>
     {config_warning}
 </body>
 </html>
 """
-
-NSFW_KEYWORDS = ["sexy", "nude", "naked", "porn", "erotic", "adult", "explicit"]
-
-def is_nsfw(prompt: str) -> bool:
-    return any(word in prompt.lower() for word in NSFW_KEYWORDS)
 
 def generate_prompt(desc: str, mode: str = None) -> str:
     """Generate or enhance prompt using Replicate API (Mistral 7B)"""
@@ -257,13 +231,12 @@ def generate_prompt(desc: str, mode: str = None) -> str:
         system_prompt = (
             "You are an elite prompt engineer for image generation. "
             "Enhance the user description for better results, make it more detailed and vivid. "
-            "Output ONLY the enhanced prompt."
+            "Output ONLY the enhanced prompt, nothing else."
         )
     else:
-        scene_type = "hyper-explicit NSFW" if mode == "nsfw" else "graphic violence" if mode == "violence" else ""
         system_prompt = (
-            f"You are an elite prompt engineer. Convert the user description into a {scene_type} scene. "
-            f"Photorealistic, cinematic. Output ONLY the final prompt."
+            "You are an elite prompt engineer. Create a detailed, photorealistic image prompt. "
+            "Output ONLY the final prompt, nothing else."
         )
     
     headers = {
@@ -289,119 +262,89 @@ def generate_prompt(desc: str, mode: str = None) -> str:
         return r.json()["content"][0]["text"].strip()
     except requests.RequestException as e:
         app.logger.error(f"Replicate API error: {str(e)}")
-        return f"Error: Failed to connect to Replicate API. {str(e)}"
+        return f"Error: {str(e)}"
 
-def generate_image(prompt: str, refs, use_controlnet: bool, denoising: float, image_size: str, blur: bool = False):
-    """Generate image using RunPod A1111 endpoint with polling"""
+def generate_image(prompt: str, image_size: str):
+    """Generate image using Replicate API (Flux)"""
     
-    if not runpod_api_key or not runpod_endpoint_id:
-        return "Error: RunPod credentials missing. Set RUNPOD_API_KEY and RUNPOD_ENDPOINT_ID."
-    
-    if not refs:
-        return "Warning: No reference images provided."
-    
-    ref_bytes = refs[0].read()
-    init_img = base64.b64encode(ref_bytes).decode()
+    if not replicate_api_key:
+        return None, "Error: REPLICATE_API_KEY missing"
     
     size_map = {
-        "Banner Wide (1920x300)": (1920, 300),
-        "Banner Narrow (728x90)": (728, 90),
-        "Square (1024x1024)": (1024, 1024),
-        "Portrait (768x1024)": (768, 1024),
+        "Square (1024x1024)": "square",
+        "Portrait (768x1024)": "portrait",
+        "Landscape (1024x768)": "landscape",
     }
-    w, h = size_map.get(image_size, (768, 1024))
+    size = size_map.get(image_size, "square")
     
     headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {runpod_api_key}"
+        "Authorization": f"Bearer {replicate_api_key}",
+        "Content-Type": "application/json"
     }
     
     payload = {
+        "model": "black-forest-labs/flux-pro",
         "input": {
             "prompt": prompt,
-            "negative_prompt": "blurry, deformed, ugly",
-            "steps": 35,
-            "cfg_scale": 7,
-            "sampler_name": "DPM++ 2M Karras",
-            "width": w,
-            "height": h,
-            "denoising_strength": denoising,
-            "init_images": [init_img],
+            "image_size": size,
+            "num_outputs": 1,
+            "guidance_scale": 7.5,
         }
     }
     
     try:
-        # Submit job to RunPod
-        start_resp = requests.post(
-            f"https://api.runpod.io/v2/{runpod_endpoint_id}/run",
+        r = requests.post(
+            "https://api.replicate.com/v1/predictions",
             headers=headers,
             json=payload,
             timeout=30
         )
-        start_resp.raise_for_status()
-        job_id = start_resp.json()["id"]
-        app.logger.info(f"RunPod job started: {job_id}")
+        r.raise_for_status()
+        data = r.json()
+        prediction_id = data["id"]
         
-        # Poll for completion (max 10 minutes)
-        for attempt in range(240):  # 240 * 2.5s = 600s = 10 minutes
-            time.sleep(2.5)
+        for attempt in range(60):
+            time.sleep(5)
             
-            status_resp = requests.get(
-                f"https://api.runpod.io/v2/{runpod_endpoint_id}/status/{job_id}",
+            status_r = requests.get(
+                f"https://api.replicate.com/v1/predictions/{prediction_id}",
                 headers=headers,
                 timeout=10
             )
-            status_resp.raise_for_status()
-            status_data = status_resp.json()
+            status_r.raise_for_status()
+            status_data = status_r.json()
             
-            if status_data.get("status") == "COMPLETED":
-                images = status_data.get("output", {}).get("images", [])
-                if images:
-                    images_html = ""
-                    for i, b64 in enumerate(images):
-                        img_src = f"data:image/png;base64,{b64}"
-                        if blur:
-                            images_html += f"""<div class="polaroid blurred"><img src="{img_src}"><div class="overlay">BUY CREDITS</div><div class="caption">Creation {i+1}</div></div>"""
-                        else:
-                            images_html += f"""<div class="polaroid"><img src="{img_src}"><div class="caption">Creation {i+1}</div></div>"""
-                    return images_html
+            if status_data["status"] == "succeeded":
+                outputs = status_data.get("output", [])
+                if outputs:
+                    return outputs[0], None
                 else:
-                    return "Error: RunPod returned no images."
+                    return None, "Error: No output from model"
             
-            elif status_data.get("status") == "FAILED":
-                return f"Error: Job failed - {status_data.get('error', 'Unknown error')}"
+            elif status_data["status"] == "failed":
+                return None, f"Error: {status_data.get('error', 'Generation failed')}"
         
-        return "Error: Generation timeout (10 minutes exceeded)"
+        return None, "Error: Generation timeout"
     
     except requests.RequestException as e:
-        return f"Error: RunPod API failed - {str(e)}"
+        return None, f"Error: {str(e)}"
 
 @app.route("/", methods=["GET", "POST"])
 def index():
     session.setdefault("logged_in", False)
     session.setdefault("credits", 10)
-    session.setdefault("content_mode", None)
     
     config_warning = ""
-    missing_keys = []
     
     if not replicate_api_key:
-        missing_keys.append("REPLICATE_API_KEY")
-    if not runpod_api_key:
-        missing_keys.append("RUNPOD_API_KEY")
-    if not runpod_endpoint_id:
-        missing_keys.append("RUNPOD_ENDPOINT_ID")
-    
-    if missing_keys:
-        config_warning = f"""
+        config_warning = """
         <div class="config-warning">
-            <strong>⚠️ Missing environment variables:</strong><br>
-            {', '.join(missing_keys)}<br><br>
-            Add these in Render → Environment Variables and redeploy.
+            <strong>⚠️ Missing REPLICATE_API_KEY</strong><br>
+            Add it to environment variables and redeploy.
         </div>
         """
     
-    error = success = ""
+    error = success = status = ""
     
     if request.method == "POST" and not session["logged_in"]:
         if "signup" in request.form:
@@ -423,84 +366,67 @@ def index():
     if not session["logged_in"]:
         return render_template_string(LOGIN_HTML.format(CSS=CSS, error=error, success=success))
     
-    generated_prompt = images_html = buy_info = ""
+    images_html = ""
     desc = session.get("desc", "")
-    use_controlnet = session.get("use_controlnet", False)
-    denoising = session.get("denoising", 0.35)
-    image_size = session.get("image_size", "Portrait (768x1024)")
-    content_mode = session.get("content_mode")
+    image_size = session.get("image_size", "Square (1024x1024)")
     
     if request.method == "POST":
-        desc = request.form.get("desc", desc)
+        desc = request.form.get("desc", desc).strip()
         session["desc"] = desc
-        use_controlnet = "use_controlnet" in request.form
-        session["use_controlnet"] = use_controlnet
-        denoising = float(request.form.get("denoising", denoising))
-        session["denoising"] = denoising
         image_size = request.form.get("image_size", image_size)
         session["image_size"] = image_size
         
         if "enhance" in request.form:
-            time.sleep(random.uniform(1.5, 2.1))
-            enhanced = generate_prompt(desc, mode="enhance")
-            if "Error" not in enhanced:
-                desc = enhanced
-                session["desc"] = desc
-                generated_prompt = f"<h2>Enhanced Prompt</h2><pre>{enhanced}</pre>"
+            if not desc:
+                error = '<p style="color:red;">Enter a description</p>'
             else:
-                error = f'<p style="color:red;">{enhanced}</p>'
-        
-        elif "nsfw" in request.form and session["logged_in"]:
-            session["content_mode"] = "nsfw"
-        elif "violence" in request.form and session["logged_in"]:
-            session["content_mode"] = "violence"
+                status = '<div class="loading"><div class="spinner"></div>Enhancing prompt...</div>'
+                enhanced = generate_prompt(desc, mode="enhance")
+                if not enhanced.startswith("Error"):
+                    desc = enhanced
+                    session["desc"] = desc
+                    status = f"<h3 style='color:#888;'>Enhanced: {enhanced[:100]}...</h3>"
+                else:
+                    error = f'<p style="color:red;">{enhanced}</p>'
         
         elif "generate" in request.form:
-            refs = request.files.getlist("refs")
-            
-            if not desc.strip():
-                error = '<p style="color:red;">Need a description</p>'
-            elif not replicate_api_key or not runpod_api_key or not runpod_endpoint_id:
-                error = '<p style="color:red;">API keys missing</p>'
+            if not desc:
+                error = '<p style="color:red;">Describe what you want to generate</p>'
+            elif not replicate_api_key:
+                error = '<p style="color:red;">API key missing</p>'
             else:
-                session["credits"] -= 1
+                status = '<div class="loading"><div class="spinner"></div>Generating image... This may take 1-2 minutes</div>'
                 
-                time.sleep(random.uniform(1.5, 2.1))
-                prompt = generate_prompt(desc, mode=content_mode if session["logged_in"] else None)
+                prompt = generate_prompt(desc, mode="generate")
                 
-                if "Error" not in prompt:
-                    generated_prompt = f"<h2>Generated Prompt</h2><pre>{prompt}</pre>"
-                    time.sleep(random.uniform(2.4, 3.3))
-                    images_html = generate_image(prompt, refs, use_controlnet, denoising, image_size)
-                else:
+                if prompt.startswith("Error"):
                     error = f'<p style="color:red;">{prompt}</p>'
+                else:
+                    img_url, img_error = generate_image(prompt, image_size)
+                    
+                    if img_error:
+                        error = f'<p style="color:red;">{img_error}</p>'
+                    elif img_url:
+                        images_html = f'<div class="polaroid"><img src="{img_url}" style="width:100%;border:1px solid #222;"><div class="caption">Generated</div></div>'
+                        status = '<p style="color:green;">✓ Image generated!</p>'
+                        session["credits"] -= 1 if session["credits"] != float('inf') else 0
     
     credits = "∞" if session["credits"] == float('inf') else int(session["credits"])
-    checked_controlnet = "checked" if use_controlnet else ""
-    selected_banner_wide = "selected" if image_size == "Banner Wide (1920x300)" else ""
-    selected_banner_narrow = "selected" if image_size == "Banner Narrow (728x90)" else ""
     selected_square = "selected" if image_size == "Square (1024x1024)" else ""
     selected_portrait = "selected" if image_size == "Portrait (768x1024)" else ""
-    disabled_nsfw = "" if session["logged_in"] else "disabled"
-    disabled_violence = "" if session["logged_in"] else "disabled"
+    selected_landscape = "selected" if image_size == "Landscape (1024x768)" else ""
     
     return render_template_string(
         MAIN_HTML.format(
             CSS=CSS,
             credits=credits,
-            checked_controlnet=checked_controlnet,
-            denoising=denoising,
-            selected_banner_wide=selected_banner_wide,
-            selected_banner_narrow=selected_banner_narrow,
             selected_square=selected_square,
             selected_portrait=selected_portrait,
+            selected_landscape=selected_landscape,
             desc=desc,
-            disabled_nsfw=disabled_nsfw,
-            disabled_violence=disabled_violence,
             error=error,
-            generated_prompt=generated_prompt,
+            status=status,
             images_html=images_html,
-            buy_info=buy_info,
             config_warning=config_warning
         )
     )
