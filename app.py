@@ -31,7 +31,7 @@ button {
     box-shadow: 0 0 10px #00bfff;
 }
 button:hover { background: linear-gradient(145deg, #00dfff, #009fff); }
-button:disabled { background: #333; color: #777; cursor: not-allowed; box-shadow: none; }
+button:disabled { background: #333; color: #777: #777; cursor: not-allowed; box-shadow: none; }
 .generate-btn { width: 100%; font-size: 18px; padding: 18px; }
 .image-container { margin: 20px 0; text-align: center; }
 .image-container img {
@@ -69,67 +69,67 @@ MAIN_HTML = f"""<html>
 </div>
 </div>
 <script>
-function enhance() {{
+function enhance() {
     const prompt = document.getElementById('prompt').value;
-    if (!prompt) {{ alert('Please enter a description first'); return; }}
+    if (!prompt) { alert('Please enter a description first'); return; }
    
     const btn = document.getElementById('enhanceBtn');
     btn.disabled = true;
     btn.textContent = 'ENHANCING...';
     document.getElementById('result').innerHTML = '<div class="success">Enhancing your prompt...</div>';
    
-    fetch('/enhance', {{
+    fetch('/enhance', {
         method: 'POST',
-        headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{prompt: prompt}})
-    }})
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({prompt: prompt})
+    })
     .then(r => r.json())
-    .then(data => {{
-        if (data.error) {{
+    .then(data => {
+        if (data.error) {
             document.getElementById('result').innerHTML = '<div class="error">Error: ' + data.error + '</div>';
-        }} else {{
+        } else {
             document.getElementById('prompt').value = data.enhanced;
             document.getElementById('result').innerHTML = '<div class="success">Prompt enhanced!</div>';
-        }}
-    }})
-    .catch(e => {{
+        }
+    })
+    .catch(e => {
         document.getElementById('result').innerHTML = '<div class="error">Enhancement failed: ' + e + '</div>';
-    }})
-    .finally(() => {{
+    })
+    .finally(() => {
         btn.disabled = false;
-        btn.textContent = 'ENHANCE';
-    }});
+        btn.textContent = 'EJNHANCE';
+    });
 }}
 
-function generate() {{
+function generate() {
     const prompt = document.getElementById('prompt').value;
-    if (!prompt) {{ alert('Please enter a description first'); return; }}
+    if (!prompt) { alert('Please enter a description first'); return; }
    
     const btn = document.getElementById('generateBtn');
     btn.disabled = true;
     btn.textContent = 'GENERATING...';
     document.getElementById('result').innerHTML = '<div class="success">Generating image... this may take 30-60 seconds</div>';
    
-    fetch('/generate', {{
+    fetch('/generate', {
         method: 'POST',
-        headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{prompt: prompt}})
-    }})
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({prompt: prompt})
+    })
     .then(r => r.json())
-    .then(data => {{
-        if (data.error) {{
+    .then(data => {
+        if (data.error) {
             document.getElementById('result').innerHTML = '<div class="error">Error: ' + data.error + '</div>';
-        }} else if (data.image_url) {{
+        } else if (data.image_url) {
             document.getElementById('result').innerHTML = '<div class="image-container"><img src="' + data.image_url + '" alt="Generated"/></div>';
-        }}
-    }})
-    .catch(e => {{
+        }
+    })
+    .catch(e => {
         document.getElementById('result').innerHTML = '<div class="error">Generation failed: ' + e + '</div>';
-    }})
-    .finally(() => {{
+    })
+    .finally(() => {
         btn.disabled = false;
         btn.textContent = 'GENERATE IMAGE';
-    }});
+    });
 }}
 </script>
 </body>
@@ -189,9 +189,9 @@ def generate():
         data = request.get_json()
         prompt = data.get('prompt', '')
         if not fal_key:
-            return jsonify({'error': 'FAL_KEY not configured (add your fal.ai API key as env var FAL_KEY)'}), 500
+            return jsonify({'error': 'FAL_KEY not configured'}), 500
         
-        model_url = "https://fal.ai/models/fal-ai/flux/dev/api"
+        run_url = "https://queue.fal.ai/fal-ai/flux/dev"
         
         input_data = {
             "prompt": prompt,
@@ -200,28 +200,57 @@ def generate():
             "guidance_scale": 3.5,
             "num_images": 1,
             "enable_safety_checker": False,
-            "sync_mode": True  # Try sync first for faster response
+            "output_format": "png"
         }
         
+        # Submit request
         response = requests.post(
-            model_url,
+            run_url,
             headers={
                 "Authorization": f"Key {fal_key}",
                 "Content-Type": "application/json"
             },
-            json=input_data,
-            timeout=120
+            json={"input": input_data},
+            timeout=30
         )
         
-        if response.status_code == 200:
-            result_data = response.json()
-            images = result_data.get("images", [])
-            if images:
-                return jsonify({'image_url': images[0]["url"]})
-            else:
-                return jsonify({'error': 'No image returned'}), 500
-        else:
-            return jsonify({'error': f'Fal.ai API error: {response.status_code} - {response.text}'}), 500
+        if response.status_code not in (200, 202):
+            return jsonify({'error': f'Fal.ai submit error: {response.status_code} - {response.text}'}), 500
+        
+        resp_data = response.json()
+        
+        # If immediate result (rare for flux)
+        if "result" in resp_data and resp_data["result"].get("images"):
+            images = resp_data["result"]["images"]
+            return jsonify({'image_url': images[0]["url"]})
+        
+        # Otherwise, get status_url and poll
+        status_url = resp_data.get("status_url")
+        if not status_url:
+            return jsonify({'error': 'No status_url received'}), 500
+        
+        # Poll
+        for _ in range(60):  # Up to ~3 minutes
+            time.sleep(4)
+            status_resp = requests.get(
+                status_url,
+                headers={"Authorization": f"Key {fal_key}"},
+                timeout=10
+            )
+            if status_resp.status_code != 200:
+                continue
+            
+            status_data = status_resp.json()
+            if status_data.get("status") == "COMPLETED":
+                images = status_data.get("result", {}).get("images", [])
+                if images:
+                    return jsonify({'image_url': images[0]["url"]})
+                return jsonify({'error': 'No images in result'}), 500
+            elif status_data.get("status") in ("FAILED", "CANCELLED"):
+                error_msg = status_data.get("error", "Unknown error")
+                return jsonify({'error': f'Generation failed: {error_msg}'}), 500
+        
+        return jsonify({'error': 'Generation timed out'}), 500
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
