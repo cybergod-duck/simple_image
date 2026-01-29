@@ -1,17 +1,16 @@
-import flask
 from flask import Flask, request, session, render_template_string
 import requests
 import os
 import time
 
 app = Flask(__name__)
-app.secret_key = os.urandom(24)
+app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
 
 # Load environment variables
 openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
 replicate_key = os.getenv("REPLICATE_API_KEY", "").strip()
 
-# FIXED: Use free Mistral model that actually works
+# Use free Mistral model
 enhance_model = "mistralai/mistral-7b-instruct:free"
 
 CSS = """
@@ -86,4 +85,3 @@ button:disabled {
 .image-container img {
     max-width: 100%;
     border-radius: 8px;
-    box
