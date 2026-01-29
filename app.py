@@ -16,7 +16,9 @@ enhance_model = "meta-llama/llama-3.1-8b-instruct"
 
 CSS = """
 body { background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
-.container { max-width: 800px; margin: 0 auto; }
+.container { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: row; }
+.left-column { width: 40%; padding-right: 20px; }
+.right-column { width: 60%; }
 h1 { color: #f4444; font-size: 2.5em; margin-bottom: 10px; text-shadow: 0 0 10px #00bfff; }
 .tagline { color: #888; margin-bottom: 30px; }
 textarea {
@@ -26,12 +28,12 @@ textarea {
 }
 .button-row { display: flex; gap: 10px; margin: 15px 0; }
 button {
-    background: linear-gradient(145deg, #ab0000, #b22222); color: white;
+    background: linear-gradient(145deg, #00bfff, #007fff); color: white;
     border: none; border-radius: 8px; padding: 15px 30px;
     font-weight: 600; font-size: 16px; cursor: pointer; flex: 1;
     box-shadow: 0 0 10px #00bfff;
 }
-button:hover { background: linear-gradient(145deg, #a00000, #d32f2f); }
+button:hover { background: linear-gradient(145deg, #00dfff, #009fff); }
 button:disabled { background: #333; color: #777; cursor: not-allowed; box-shadow: none; }
 .generate-btn { width: 100%; font-size: 18px; padding: 18px; }
 .result-box {
@@ -66,6 +68,7 @@ MAIN_HTML = f"""<html>
 </head>
 <body>
 <div class="container">
+<div class="left-column">
 <h1>Simple Image</h1>
 <p class="tagline">Totally Uncensored Image Generation</p>
 <textarea id="prompt" placeholder="Describe your image..." rows="3"></textarea>
@@ -76,7 +79,10 @@ MAIN_HTML = f"""<html>
 <input type="file" id="fileInput" accept="image/*" style="display: none;">
 <button class="generate-btn" id="generateBtn" onclick="generate()">GENERATE IMAGE</button>
 <div id="preview"></div>
+</div>
+<div class="right-column">
 <div id="result"></div>
+</div>
 </div>
 <script>
 let imageData = null;
