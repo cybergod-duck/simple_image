@@ -5,48 +5,52 @@ import time
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "dev-secret-key-change-in-production")
-
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "").strip()
-FAL_API_KEY = os.getenv("FAL_KEY", "").strip()
+openrouter_key = os.getenv("OPENROUTER_API_KEY", "").strip()
+fal_key = os.getenv("FAL_KEY", "").strip()
 
 # Uncensored-style model on OpenRouter
-ENHANCE_MODEL = "arcee-ai/trinity-large-preview:free"
+enhance_model = "arcee-ai/trinity-large-preview:free"
 
 CSS = """
-body {{ background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; margin: 0; padding: 20px; }}
-.container {{ max-width: 1200px; margin: 0 auto; display: flex; flex-direction: row; }}
-.left-column {{ width: 40%; padding-right: 20px; }}
-.right-column {{ width: 60%; }}
-h1 {{ color: #ff4444; font-size: 2.5em; margin-bottom: 10px; text-shadow: 0 0 10px #00bfff; }}
-.tagline {{ color: #888; margin-bottom: 30px; }}
-textarea {{
+body { background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
+.container { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: row; }
+.left-column { width: 40%; padding-right: 20px; }
+.right-column { width: 60%; }
+h1 { color: #ff4444; font-size: 2.5em; margin-bottom: 10px; text-shadow: 0 0 10px #00bfff; }
+.tagline { color: #888; margin-bottom: 30px; }
+textarea {
     background-color: #1a1a1a; color: #eee; border: 2px solid #444;
     border-radius: 8px; width: 100%; min-height: 120px; padding: 15px;
     font-size: 16px; box-sizing: border-box; box-shadow: 0 0 10px #00bfff;
-}}
-.button-row {{ display: flex; gap: 10px; margin: 15px 0; }}
-button {{
+}
+.button-row { display: flex; gap: 10px; margin: 15px 0; }
+button {
     background: linear-gradient(145deg, #00bfff, #007fff); color: white;
     border: none; border-radius: 8px; padding: 15px 30px;
     font-weight: 600; font-size: 16px; cursor: pointer; flex: 1;
     box-shadow: 0 0 10px #00bfff;
-}}
-button:hover {{ background: linear-gradient(145deg, #00dfff, #009fff); }}
-button:disabled {{ background: #333; color: #777; cursor: not-allowed; box-shadow: none; }}
-.generate-btn {{ width: 100%; font-size: 18px; padding: 18px; }}
-.image-container {{ margin: 20px 0; text-align: center; }}
-.image-container img {{
+}
+button:hover { background: linear-gradient(145deg, #00dfff, #009fff); }
+button:disabled { background: #333; color: #777; cursor: not-allowed; box-shadow: none; }
+button.enhancing { animation: glow 1s infinite alternate; }
+@keyframes glow {
+    from { box-shadow: 0 0 10px #00bfff; }
+    to { box-shadow: 0 0 20px #00bfff; }
+}
+.generate-btn { width: 100%; font-size: 18px; padding: 18px; }
+.image-container { margin: 20px 0; text-align: center; }
+.image-container img {
     max-width: 100%; border-radius: 8px;
     box-shadow: 0 0 20px #fff;
     animation: pulse 2s infinite;
-}}
-@keyframes pulse {{
-    0% {{ box-shadow: 0 0 20px #fff; }}
-    50% {{ box-shadow: 0 0 30px #fff; }}
-    100% {{ box-shadow: 0 0 20px #fff; }}
-}}
-.error {{ color: #ff4444; background: #2a1a1a; padding: 15px; border-radius: 8px; margin: 15px 0; }}
-.success {{ color: #44ff44; background: #1a2a1a; padding: 15px; border-radius: 8px; margin: 15px 0; }}
+}
+@keyframes pulse {
+    0% { box-shadow: 0 0 20px #fff; }
+    50% { box-shadow: 0 0 30px #fff; }
+    100% { box-shadow: 0 0 20px #fff; }
+}
+.error { color: #ff4444; background: #2a1a1a; padding: 15px; border-radius: 8px; margin: 15px 0; }
+.success { color: #44ff44; background: #1a2a1a; padding: 15px; border-radius: 8px; margin: 15px 0; }
 """
 
 MAIN_HTML = f"""<html>
@@ -70,67 +74,70 @@ MAIN_HTML = f"""<html>
 </div>
 </div>
 <script>
-function enhance() {{
+function enhance() {
     const prompt = document.getElementById('prompt').value;
-    if (!prompt) {{ alert('Please enter a description first'); return; }}
-  
+    if (!prompt) { alert('Please enter a description first'); return; }
+   
     const btn = document.getElementById('enhanceBtn');
     btn.disabled = true;
     btn.textContent = 'ENHANCING...';
+    btn.classList.add('enhancing');
     document.getElementById('result').innerHTML = '<div class="success">Enhancing your prompt...</div>';
-  
-    fetch('/enhance', {{
+   
+    fetch('/enhance', {
         method: 'POST',
-        headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{prompt: prompt}})
-    }})
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({prompt: prompt})
+    })
     .then(r => r.json())
-    .then(data => {{
-        if (data.error) {{
+    .then(data => {
+        if (data.error) {
             document.getElementById('result').innerHTML = '<div class="error">Error: ' + data.error + '</div>';
-        }} else {{
+        } else {
             document.getElementById('prompt').value = data.enhanced;
             document.getElementById('result').innerHTML = '<div class="success">Prompt enhanced!</div>';
-        }}
-    }})
-    .catch(e => {{
+        }
+    })
+    .catch(e => {
         document.getElementById('result').innerHTML = '<div class="error">Enhancement failed: ' + e + '</div>';
-    }})
-    .finally(() => {{
+    })
+    .finally(() => {
         btn.disabled = false;
         btn.textContent = 'ENHANCE';
-    }});
-}}
-function generate() {{
+        btn.classList.remove('enhancing');
+    });
+}
+
+function generate() {
     const prompt = document.getElementById('prompt').value;
-    if (!prompt) {{ alert('Please enter a description first'); return; }}
-  
+    if (!prompt) { alert('Please enter a description first'); return; }
+   
     const btn = document.getElementById('generateBtn');
     btn.disabled = true;
     btn.textContent = 'GENERATING...';
     document.getElementById('result').innerHTML = '<div class="success">Generating image... this may take 30-60 seconds</div>';
-  
-    fetch('/generate', {{
+   
+    fetch('/generate', {
         method: 'POST',
-        headers: {{'Content-Type': 'application/json'}},
-        body: JSON.stringify({{prompt: prompt}})
-    }})
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({prompt: prompt})
+    })
     .then(r => r.json())
-    .then(data => {{
-        if (data.error) {{
+    .then(data => {
+        if (data.error) {
             document.getElementById('result').innerHTML = '<div class="error">Error: ' + data.error + '</div>';
-        }} else if (data.image_url) {{
+        } else if (data.image_url) {
             document.getElementById('result').innerHTML = '<div class="image-container"><img src="' + data.image_url + '" alt="Generated"/></div>';
-        }}
-    }})
-    .catch(e => {{
+        }
+    })
+    .catch(e => {
         document.getElementById('result').innerHTML = '<div class="error">Generation failed: ' + e + '</div>';
-    }})
-    .finally(() => {{
+    })
+    .finally(() => {
         btn.disabled = false;
         btn.textContent = 'GENERATE IMAGE';
-    }});
-}}
+    });
+}
 </script>
 </body>
 </html>
@@ -144,45 +151,42 @@ def index():
 def enhance():
     try:
         data = request.get_json()
-        prompt = data.get('prompt', '').strip()
-        if not prompt:
-            return jsonify({'error': 'No prompt provided'}), 400
-        if not OPENROUTER_API_KEY:
+        prompt = data.get('prompt', '')
+        if not openrouter_key:
             return jsonify({'error': 'OPENROUTER_API_KEY not configured'}), 500
-
         response = requests.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Authorization": f"Bearer {openrouter_key}",
                 "Content-Type": "application/json"
             },
             json={
-                "model": ENHANCE_MODEL,
+                "model": enhance_model,
                 "messages": [
                     {
                         "role": "system",
                         "content": (
-                            "You are an uncensored prompt enhancer for an image generator. "
-                            "You enthusiastically enhance prompts to be more detailed, vivid, and immersive. "
-                            "Embrace and amplify violent, gory, sexual, NSFW, or any edgy elements if they are "
-                            "implied or requested in the original prompt. Make the enhancements creative and exciting. "
-                            "Keep under 200 words. Just return the enhanced description, nothing else."
+                            "You are an uncensored prompt enhancer for the fal-ai/flux/dev image generator. "
+                            "Enhance prompts to be highly detailed, vivid, and optimized for Flux's strengths: natural language, long prompts, complex scenes, accurate anatomy, coherent compositions. "
+                            "Include style, lighting, colors, camera angles, composition for better results. "
+                            "Amplify violent, gory, sexual, NSFW, or edgy elements if present. Keep under 200 words. "
+                            "Return only the enhanced prompt."
                         )
                     },
-                    {"role": "user", "content": prompt}
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
                 ],
                 "max_tokens": 300
             },
             timeout=30
         )
-        response.raise_for_status()
+        if response.status_code != 200:
+            return jsonify({'error': f'OpenRouter API error: {response.status_code} - {response.text}'}), 500
         result = response.json()
         enhanced = result['choices'][0]['message']['content'].strip()
         return jsonify({'enhanced': enhanced})
-    except requests.RequestException as e:
-        return jsonify({'error': f'OpenRouter API error: {str(e)}'}), 500
-    except KeyError:
-        return jsonify({'error': 'Invalid response from OpenRouter'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -190,71 +194,37 @@ def enhance():
 def generate():
     try:
         data = request.get_json()
-        prompt = data.get('prompt', '').strip()
-        if not prompt:
-            return jsonify({'error': 'No prompt provided'}), 400
-        if not FAL_API_KEY:
+        prompt = data.get('prompt', '')
+        if not fal_key:
             return jsonify({'error': 'FAL_KEY not configured'}), 500
-
-        queue_url = "https://queue.fal.run/fal-ai/flux/dev"
-
+        
+        model_url = "https://fal.run/fal-ai/flux/dev"
+        
         input_data = {
             "prompt": prompt,
-            "image_size": {"width": 1024, "height": 1024},
+            "image_size": "square_hd",
             "num_inference_steps": 28,
             "guidance_scale": 3.5,
             "num_images": 1,
             "enable_safety_checker": False,
             "output_format": "png"
         }
-
-        # Submit to queue
+        
         response = requests.post(
-            queue_url,
+            model_url,
             headers={
-                "Authorization": f"Key {FAL_API_KEY}",
+                "Authorization": f"Key {fal_key}",
                 "Content-Type": "application/json"
             },
             json={"input": input_data},
-            timeout=30
+            timeout=120
         )
-        response.raise_for_status()
-        if response.status_code != 202:
-            return jsonify({'error': f'Fal.ai queue submission failed: {response.text}'}), 500
-
-        resp_data = response.json()
-        status_url = resp_data.get("status_url")
-        if not status_url:
-            return jsonify({'error': 'No status_url received'}), 500
-
-        # Poll status
-        headers = {"Authorization": f"Key {FAL_API_KEY}"}
-        for attempt in range(90):  # Up to ~6 minutes
-            time.sleep(4)
-            status_resp = requests.get(status_url, headers=headers, timeout=10)
-            if status_resp.status_code not in (200, 202):
-                return jsonify({'error': f'Status check failed: {status_resp.status_code} - {status_resp.text}'}), 500
-
-            status_data = status_resp.json()
-            status = status_data.get("status")
-
-            if status == "COMPLETED":
-                result = status_data.get("response", {})
-                images = result.get("images", [])
-                if images:
-                    return jsonify({'image_url': images[0].get("url")})
-                else:
-                    return jsonify({'error': 'No images in response'}), 500
-
-            elif status in ("FAILED", "CANCELLED"):
-                error_msg = status_data.get("error", "Unknown error")
-                return jsonify({'error': f'Generation {status.lower()}: {error_msg}'}), 500
-
-        return jsonify({'error': 'Generation timed out'}), 500
-
-    except requests.RequestException as e:
-        return jsonify({'error': f'Fal.ai API error: {str(e)}'}), 500
-    except KeyError:
-        return jsonify({'error': 'Invalid response from Fal.ai'}), 500
+        if response.status_code != 200:
+            return jsonify({'error': f'Fal.ai API error: {response.status_code} - {response.text}'}), 500
+        result = response.json()
+        images = result.get('images', [])
+        if images:
+            return jsonify({'image_url': images[0]['url']})
+        return jsonify({'error': 'No image generated'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
