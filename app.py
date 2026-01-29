@@ -230,26 +230,20 @@ def generate():
         if not replicate_key:
             return jsonify({'error': 'REPLICATE_API_KEY not configured'}), 500
         
+        # Use uncensored Flux model for both t2i and i2i
+        model_path = "aisha-ai-official/flux.1dev-uncensored-msfluxnsfw-v3"
+        
+        input_data = {
+            "prompt": prompt,
+            "aspect_ratio": "1:1",
+            "output_format": "png",
+            "num_inference_steps": 25  # Adjust as needed
+        }
+        
         if image_data:
-            # Use flux-dev for img2img
-            model_path = "black-forest-labs/flux-dev"
-            input_data = {
-                "prompt": prompt,
-                "image": image_data,  # data URI should work as per Replicate's support for base64 data URLs
-                "strength": 0.75,
-                "aspect_ratio": "1:1",
-                "output_format": "png",
-                "num_inference_steps": 25  # Faster
-            }
-        else:
-            # Use flux-schnell for t2i
-            model_path = "black-forest-labs/flux-schnell"
-            input_data = {
-                "prompt": prompt,
-                "num_outputs": 1,
-                "aspect_ratio": "1:1",
-                "output_format": "png"
-            }
+            # For img2img
+            input_data["image"] = image_data
+            input_data["strength"] = 0.75
         
         response = requests.post(
             f"https://api.replicate.com/v1/models/{model_path}/predictions",
@@ -265,7 +259,7 @@ def generate():
         prediction = response.json()
         get_url = prediction.get('urls', {}).get('get')
         # Poll for completion
-        for _ in range(90):  # Longer timeout for dev
+        for _ in range(90):  # Longer timeout
             time.sleep(2)
             status_response = requests.get(
                 get_url,
