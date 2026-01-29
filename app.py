@@ -11,10 +11,6 @@ replicate_key = os.getenv("REPLICATE_API_KEY", "").strip()
 
 # Uncensored-style model on OpenRouter
 enhance_model = "arcee-ai/trinity-large-preview:free"
-# Previous options commented out
-# enhance_model = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
-# enhance_model = "meta-llama/llama-3.1-8b-instruct"
-# enhance_model = "nousresearch/hermes-2-pro-llama-3-8b"
 
 CSS = """
 body { background-color: #0d0d0d; color: #ddd; font-family: Arial, sans-serif; margin: 0; padding: 20px; }
@@ -231,13 +227,13 @@ def generate():
             return jsonify({'error': 'REPLICATE_API_KEY not configured'}), 500
         
         # Use uncensored Flux model for both t2i and i2i
-        model_path = "aisha-ai-official/flux.1dev-uncensored-msfluxnsfw-v3"
+        model_path = "aisha-ai-official/flux.1dev-uncensored-newreality-a2"
         
         input_data = {
             "prompt": prompt,
             "aspect_ratio": "1:1",
             "output_format": "png",
-            "num_inference_steps": 25  # Adjust as needed
+            "num_inference_steps": 25  # Faster
         }
         
         if image_data:
