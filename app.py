@@ -1,3 +1,4 @@
+# api/index.py
 from flask import Flask, request, jsonify, render_template_string
 import requests
 import os
@@ -182,7 +183,7 @@ def enhance():
     except requests.RequestException as e:
         return jsonify({'error': f'OpenRouter API error: {str(e)}'}), 500
     except KeyError:
-        return jupytext({'error': 'Invalid response from OpenRouter'}), 500
+        return jsonify({'error': 'Invalid response from OpenRouter'}), 500
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
